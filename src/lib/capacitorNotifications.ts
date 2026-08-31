@@ -1,6 +1,5 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
-import { PushNotifications } from '@capacitor/push-notifications';
 import { App as CapApp } from '@capacitor/app';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { soundEngine } from './sound';
@@ -18,42 +17,39 @@ class CapacitorNotificationService {
    * Monitor whether app is in background or foreground
    */
   private initLifecycle() {
-    if (this.isCapacitor) {
-      CapApp.addListener('appStateChange', (state) => {
-        this.isAppInBackground = !state.isActive;
-      });
-    } else if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', () => {
-        this.isAppInBackground = document.hidden;
-      });
+    try {
+      if (this.isCapacitor) {
+        CapApp.addListener('appStateChange', (state) => {
+          this.isAppInBackground = !state.isActive;
+        });
+      } else if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          this.isAppInBackground = document.hidden;
+        });
+      }
+    } catch (e) {
+      console.warn('Lifecycle listener setup error:', e);
     }
   }
 
   /**
-   * Request full notification permissions (Push + Local Notifications)
+   * Request notification permissions safely via LocalNotifications
    * Essential for background operation in Android 13+ (POST_NOTIFICATIONS) and iOS.
+   * Does NOT require Firebase or google-services.json, preventing native crashes.
    */
   public async requestPermissions(): Promise<boolean> {
     try {
       if (this.isCapacitor) {
-        // 1. Request Local Notifications Permission
-        const localPerm = await LocalNotifications.requestPermissions();
-        
-        // 2. Request Push Notifications Permission
-        let pushPerm = { receive: 'denied' };
-        try {
-          pushPerm = await PushNotifications.requestPermissions();
-          if (pushPerm.receive === 'granted') {
-            await PushNotifications.register();
-          }
-        } catch (e) {
-          console.log('Push register not available or emulator:', e);
+        // 1. Check & Request Local Notifications Permission (Android 13+ POST_NOTIFICATIONS)
+        let status = await LocalNotifications.checkPermissions();
+        if (status.display !== 'granted') {
+          status = await LocalNotifications.requestPermissions();
         }
 
-        // 3. Create Android Notification Channel for High Priority / Background alerts
+        // 2. Create Android Notification Channel for High Priority / Background alerts
         await this.createAndroidChannels();
 
-        this.permissionGranted = localPerm.display === 'granted' || pushPerm.receive === 'granted';
+        this.permissionGranted = status.display === 'granted';
         return this.permissionGranted;
       } else {
         // Web / PWA Notification API
@@ -87,7 +83,7 @@ class CapacitorNotificationService {
         id: 'conjuntos_urgent_alerts',
         name: 'Alertas y Garita en Tiempo Real',
         description: 'Notificaciones urgentes de pases de visita, garita, seguridad e incidencias',
-        importance: 5, // High importance (heads-up / banner display)
+        importance: 5, // High importance (heads-up banner display)
         visibility: 1, // Public on lockscreen
         vibration: true,
         lights: true,
@@ -126,12 +122,16 @@ class CapacitorNotificationService {
     }
 
     // Play synthesized sound
-    if (soundType === 'success') {
-      soundEngine.playSuccessChime();
-    } else if (soundType === 'error') {
-      soundEngine.playErrorBeep();
-    } else {
-      soundEngine.playNotificationBeep();
+    try {
+      if (soundType === 'success') {
+        soundEngine.playSuccessChime();
+      } else if (soundType === 'error') {
+        soundEngine.playErrorBeep();
+      } else {
+        soundEngine.playNotificationBeep();
+      }
+    } catch {
+      // Audio fallback
     }
 
     // Send native system notification (shows on status bar / lockscreen even in background)

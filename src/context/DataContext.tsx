@@ -37,6 +37,8 @@ import { generateComplexCode, generateVisitorCode } from '../lib/utils';
 import { soundEngine } from '../lib/sound';
 import { capNotificationService } from '../lib/capacitorNotifications';
 import { supabase, isSupabaseConfigured, checkSupabaseHealth, ConnectionStatus } from '../lib/supabase';
+import { generateUserDeletionCertificatePDF } from '../lib/pdf';
+
 
 export interface DataContextType {
   complexes: ResidentialComplex[];
@@ -64,6 +66,27 @@ export interface DataContextType {
   markComplexPaid: (id: number, months: number, notes?: string) => void;
   toggleComplexStatus: (id: number) => void;
   changeComplexPlan: (id: number, plan: PlanType) => void;
+  createAdmin: (data: {
+    name: string;
+    email: string;
+    phone?: string;
+    complexId: number;
+    password?: string;
+  }) => { success: boolean; message?: string };
+  deleteAdmin: (userId: string) => { success: boolean; message?: string };
+  purgeUserAccountCascading: (userId: string, options?: { downloadPdf?: boolean }) => {
+    success: boolean;
+    message?: string;
+    deletedSummary?: {
+      user: User;
+      apartments: number;
+      incidents: number;
+      reservations: number;
+      visitors: number;
+      announcements: number;
+      comments: number;
+    };
+  };
 
   // Admin operations
   approveResident: (userId: string, apartmentNumber: string) => void;
@@ -246,7 +269,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     loadInitialSupabaseData();
 
-    // Setup Realtime Channel
+    // Setup Realtime Channel with robust deduplication
     const channel = supabase
       .channel('conjuntos-realtime-channel')
       .on(
@@ -254,8 +277,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         { event: '*', schema: 'public', table: 'announcement_comments' },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            const newComm直接 = payload.new as AnnouncementComment;
-            setComments((prev) => (prev.some((c) => c.id === newComm直接.id) ? prev : [...prev, newComm直接]));
+            const newComm = payload.new as AnnouncementComment;
+            setComments((prev) => {
+              if (prev.some((c) => c.id === newComm.id)) return prev;
+              const optimisticIdx = prev.findIndex(
+                (c) =>
+                  c.announcement_id === newComm.announcement_id &&
+                  c.user_id === newComm.user_id &&
+                  c.body === newComm.body &&
+                  typeof c.id === 'number' &&
+                  c.id > 1000000000000
+              );
+              if (optimisticIdx !== -1) {
+                const copy = [...prev];
+                copy[optimisticIdx] = newComm;
+                return copy;
+              }
+              return [...prev, newComm];
+            });
           } else if (payload.eventType === 'DELETE') {
             const oldId = payload.old?.id;
             if (oldId) setComments((prev) => prev.filter((c) => c.id !== oldId));
@@ -268,7 +307,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (payload) => {
           if (payload.eventType === 'INSERT') {
             const newVis = payload.new as Visitor;
-            setVisitors((prev) => (prev.some((v) => v.id === newVis.id) ? prev : [newVis, ...prev]));
+            setVisitors((prev) => {
+              if (prev.some((v) => v.id === newVis.id)) return prev;
+              const optimisticIdx = prev.findIndex(
+                (v) =>
+                  v.code === newVis.code &&
+                  typeof v.id === 'number' &&
+                  v.id > 1000000000000
+              );
+              if (optimisticIdx !== -1) {
+                const copy = [...prev];
+                copy[optimisticIdx] = newVis;
+                return copy;
+              }
+              return [newVis, ...prev];
+            });
             capNotificationService.sendNotification({
               title: '🚗 Nuevo Pase de Visita Registrado',
               body: `${newVis.name || 'Visita'} al Depto ${newVis.apartment_number || ''}`,
@@ -292,11 +345,26 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         { event: '*', schema: 'public', table: 'incidents' },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            const newInc最佳 = payload.new as Incident;
-            setIncidents((prev) => (prev.some((i) => i.id === newInc最佳.id) ? prev : [newInc最佳, ...prev]));
+            const newInc = payload.new as Incident;
+            setIncidents((prev) => {
+              if (prev.some((i) => i.id === newInc.id)) return prev;
+              const optimisticIdx = prev.findIndex(
+                (i) =>
+                  i.title === newInc.title &&
+                  i.residential_complex_id === newInc.residential_complex_id &&
+                  typeof i.id === 'number' &&
+                  i.id > 1000000000000
+              );
+              if (optimisticIdx !== -1) {
+                const copy = [...prev];
+                copy[optimisticIdx] = newInc;
+                return copy;
+              }
+              return [newInc, ...prev];
+            });
             capNotificationService.sendNotification({
               title: '⚠️ Nueva Incidencia Reportada',
-              body: `${newInc最佳.title || 'Incidencia'}: ${newInc最佳.description?.substring(0, 70) || ''}`,
+              body: `${newInc.title || 'Incidencia'}: ${newInc.description?.substring(0, 70) || ''}`,
               soundType: 'error',
             });
           } else if (payload.eventType === 'UPDATE') {
@@ -311,7 +379,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (payload) => {
           if (payload.eventType === 'INSERT') {
             const newRes = payload.new as Reservation;
-            setReservations((prev) => (prev.some((r) => r.id === newRes.id) ? prev : [newRes, ...prev]));
+            setReservations((prev) => {
+              if (prev.some((r) => r.id === newRes.id)) return prev;
+              const optimisticIdx = prev.findIndex(
+                (r) =>
+                  r.area_name === newRes.area_name &&
+                  r.date === newRes.date &&
+                  r.user_id === newRes.user_id &&
+                  typeof r.id === 'number' &&
+                  r.id > 1000000000000
+              );
+              if (optimisticIdx !== -1) {
+                const copy = [...prev];
+                copy[optimisticIdx] = newRes;
+                return copy;
+              }
+              return [newRes, ...prev];
+            });
             capNotificationService.sendNotification({
               title: '📅 Nueva Solicitud de Reserva',
               body: `${newRes.area_name} para el ${newRes.date}`,
@@ -329,7 +413,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (payload) => {
           if (payload.eventType === 'INSERT') {
             const newAnn = payload.new as Announcement;
-            setAnnouncements((prev) => (prev.some((a) => a.id === newAnn.id) ? prev : [newAnn, ...prev]));
+            setAnnouncements((prev) => {
+              if (prev.some((a) => a.id === newAnn.id)) return prev;
+              // If an optimistic announcement exists with matching title & complex, replace the temporary one
+              const optimisticIdx = prev.findIndex(
+                (a) =>
+                  a.title === newAnn.title &&
+                  a.residential_complex_id === newAnn.residential_complex_id &&
+                  typeof a.id === 'number' &&
+                  a.id > 1000000000000
+              );
+              if (optimisticIdx !== -1) {
+                const copy = [...prev];
+                copy[optimisticIdx] = newAnn;
+                return copy;
+              }
+              return [newAnn, ...prev];
+            });
             capNotificationService.sendNotification({
               title: `📢 Comunicado: ${newAnn.title}`,
               body: newAnn.body?.substring(0, 80) || 'Nuevo aviso de administración',
@@ -591,6 +691,319 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     logAudit('CHANGE_PLAN', 'ResidentialComplex', id, { plan });
   };
 
+  const createAdmin = (data: {
+    name: string;
+    email: string;
+    phone?: string;
+    complexId: number;
+    password?: string;
+  }): { success: boolean; message?: string } => {
+    const cleanEmail = data.email.trim().toLowerCase();
+    const cleanName = data.name.trim();
+
+    if (!cleanName || !cleanEmail) {
+      return { success: false, message: 'El nombre y correo electrónico son obligatorios.' };
+    }
+
+    if (users.some((u) => u.email.toLowerCase() === cleanEmail)) {
+      return { success: false, message: 'Ya existe un usuario con este correo electrónico.' };
+    }
+
+    const newAdmin: User = {
+      id: `adm-${Date.now()}`,
+      name: cleanName,
+      email: cleanEmail,
+      role_id: 2,
+      role: 'admin',
+      residential_complex_id: data.complexId,
+      phone: data.phone?.trim() || '',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+      status: 'active',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    setUsers((prev) => [...prev, newAdmin]);
+
+    // Save password
+    try {
+      const passwords = JSON.parse(localStorage.getItem('conjuntos_passwords') || '{}');
+      passwords[cleanEmail] = data.password?.trim() || 'admin123';
+      localStorage.setItem('conjuntos_passwords', JSON.stringify(passwords));
+    } catch {
+      // ignore
+    }
+
+    logAudit('CREATE_ADMIN', 'User', null, { name: cleanName, email: cleanEmail, complexId: data.complexId });
+
+    if (supabase && isSupabaseConfigured) {
+      supabase.from('profiles').insert({
+        id: newAdmin.id,
+        name: newAdmin.name,
+        email: newAdmin.email,
+        role: 'admin',
+        residential_complex_id: newAdmin.residential_complex_id,
+        phone: newAdmin.phone,
+        status: 'active',
+      }).then();
+    }
+
+    soundEngine.playSuccessChime();
+    return { success: true, message: 'Administrador creado con éxito.' };
+  };
+
+  const deleteAdmin = (userId: string): { success: boolean; message?: string } => {
+    const targetUser = users.find((u) => u.id === userId);
+    if (!targetUser) {
+      return { success: false, message: 'Usuario no encontrado.' };
+    }
+
+    if (targetUser.role === 'super_admin') {
+      return { success: false, message: 'No se puede eliminar la cuenta principal de Super Admin.' };
+    }
+
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
+
+    // Remove password
+    try {
+      const passwords = JSON.parse(localStorage.getItem('conjuntos_passwords') || '{}');
+      delete passwords[targetUser.email.toLowerCase()];
+      localStorage.setItem('conjuntos_passwords', JSON.stringify(passwords));
+    } catch {
+      // ignore
+    }
+
+    logAudit('DELETE_ADMIN', 'User', null, { name: targetUser.name, email: targetUser.email });
+
+    if (supabase && isSupabaseConfigured) {
+      supabase.from('profiles').delete().eq('id', userId).then();
+      supabase.from('profiles').delete().eq('email', targetUser.email).then();
+    }
+
+    soundEngine.playTrashWhoosh();
+    return { success: true, message: 'Administrador eliminado exitosamente.' };
+  };
+
+  /**
+   * SUPER ADMIN EXCLUSIVE: Permanent Cascading Purge of an Account
+   * Deletes the user profile, credentials, associated apartments/houses, incidents,
+   * reservations, visitors, announcements, comments, and automatically generates
+   * an official audit certificate PDF for security and compliance.
+   */
+  const purgeUserAccountCascading = (
+    userId: string,
+    options: { downloadPdf?: boolean } = { downloadPdf: true }
+  ): {
+    success: boolean;
+    message?: string;
+    deletedSummary?: {
+      user: User;
+      apartments: number;
+      incidents: number;
+      reservations: number;
+      visitors: number;
+      announcements: number;
+      comments: number;
+    };
+  } => {
+    // Only super_admin is authorized
+    if (currentUser?.role !== 'super_admin') {
+      return {
+        success: false,
+        message: 'Acceso denegado: Solo el Super Administrador puede ejecutar la purga total de cuentas.',
+      };
+    }
+
+    const targetUser = users.find((u) => u.id === userId);
+    if (!targetUser) {
+      return { success: false, message: 'Usuario no encontrado en la base de datos.' };
+    }
+
+    if (targetUser.role === 'super_admin') {
+      return {
+        success: false,
+        message: 'Operación prohibida: La cuenta principal de Super Admin no puede ser purgada.',
+      };
+    }
+
+    const userComplex = complexes.find((c) => c.id === targetUser.residential_complex_id);
+
+    // 1. Find and purge apartments/houses associated with this user
+    // A user might own an apartment via apartment_id or apartment_number or resident_name
+    const targetAptNumber = targetUser.apartment_number?.trim().toLowerCase();
+    const userApts = apartments.filter((a) => {
+      if (targetUser.apartment_id && a.id === targetUser.apartment_id) return true;
+      if (
+        targetAptNumber &&
+        a.residential_complex_id === targetUser.residential_complex_id &&
+        a.number.trim().toLowerCase() === targetAptNumber
+      ) {
+        return true;
+      }
+      if (a.resident_name && a.resident_name.trim().toLowerCase() === targetUser.name.trim().toLowerCase()) {
+        return true;
+      }
+      return false;
+    });
+
+    const deletedAptIds = userApts.map((a) => a.id);
+    const deletedAptDetails = userApts.map((a) => `${a.block_name ? `${a.block_name} - ` : ''}Apto ${a.number}`);
+
+    // Remove or reset apartments
+    if (deletedAptIds.length > 0) {
+      setApartments((prev) => prev.filter((a) => !deletedAptIds.includes(a.id)));
+      if (supabase && isSupabaseConfigured) {
+        deletedAptIds.forEach((aptId) => {
+          supabase.from('apartments').delete().eq('id', aptId).then();
+        });
+      }
+    }
+
+    // 2. Incidents reported by this user
+    const userIncidents = incidents.filter(
+      (inc) => inc.reported_by === targetUser.id || inc.reporter_name === targetUser.name
+    );
+    const deletedIncidentIds = userIncidents.map((i) => i.id);
+    if (deletedIncidentIds.length > 0) {
+      setIncidents((prev) => prev.filter((i) => !deletedIncidentIds.includes(i.id)));
+      if (supabase && isSupabaseConfigured) {
+        deletedIncidentIds.forEach((incId) => {
+          supabase.from('incidents').delete().eq('id', incId).then();
+        });
+      }
+    }
+
+    // 3. Reservations made by this user
+    const userReservations = reservations.filter(
+      (res) => res.user_id === targetUser.id || res.userName === targetUser.name
+    );
+    const deletedReservationIds = userReservations.map((r) => r.id);
+    if (deletedReservationIds.length > 0) {
+      setReservations((prev) => prev.filter((r) => !deletedReservationIds.includes(r.id)));
+      if (supabase && isSupabaseConfigured) {
+        deletedReservationIds.forEach((resId) => {
+          supabase.from('reservations').delete().eq('id', resId).then();
+        });
+      }
+    }
+
+    // 4. Visitors and visitor passes
+    const userVisitors = visitors.filter(
+      (vis) =>
+        vis.visiting_user_id === targetUser.id ||
+        (targetAptNumber && vis.apartment_number?.trim().toLowerCase() === targetAptNumber)
+    );
+    const deletedVisitorIds = userVisitors.map((v) => v.id);
+    if (deletedVisitorIds.length > 0) {
+      setVisitors((prev) => prev.filter((v) => !deletedVisitorIds.includes(v.id)));
+      if (supabase && isSupabaseConfigured) {
+        deletedVisitorIds.forEach((vId) => {
+          supabase.from('visitors').delete().eq('id', vId).then();
+        });
+      }
+    }
+
+    // 5. Announcements published by this user
+    const userAnnouncements = announcements.filter((ann) => ann.published_by === targetUser.id);
+    const deletedAnnIds = userAnnouncements.map((a) => a.id);
+    if (deletedAnnIds.length > 0) {
+      setAnnouncements((prev) => prev.filter((a) => !deletedAnnIds.includes(a.id)));
+      if (supabase && isSupabaseConfigured) {
+        deletedAnnIds.forEach((aId) => {
+          supabase.from('announcements').delete().eq('id', aId).then();
+        });
+      }
+    }
+
+    // 6. Comments written by this user
+    const userComments = comments.filter((c) => c.user_id === targetUser.id);
+    const deletedCommentIds = userComments.map((c) => c.id);
+    if (deletedCommentIds.length > 0) {
+      setComments((prev) => prev.filter((c) => !deletedCommentIds.includes(c.id)));
+      if (supabase && isSupabaseConfigured) {
+        deletedCommentIds.forEach((cId) => {
+          supabase.from('announcement_comments').delete().eq('id', cId).then();
+        });
+      }
+    }
+
+    // 7. Remove User from User List and Local Auth Passwords
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
+
+    try {
+      const passwords = JSON.parse(localStorage.getItem('conjuntos_passwords') || '{}');
+      delete passwords[targetUser.email.toLowerCase()];
+      localStorage.setItem('conjuntos_passwords', JSON.stringify(passwords));
+    } catch {
+      // ignore
+    }
+
+    // 8. Delete from Supabase profiles
+    if (supabase && isSupabaseConfigured) {
+      supabase.from('profiles').delete().eq('id', userId).then();
+      supabase.from('profiles').delete().eq('email', targetUser.email).then();
+    }
+
+    // 9. Generate Security Audit PDF Document
+    if (options.downloadPdf !== false) {
+      try {
+        generateUserDeletionCertificatePDF({
+          user: targetUser,
+          complex: userComplex,
+          deletedApartmentsCount: userApts.length,
+          deletedApartmentsDetails: deletedAptDetails,
+          deletedIncidentsCount: userIncidents.length,
+          deletedReservationsCount: userReservations.length,
+          deletedVisitorsCount: userVisitors.length,
+          deletedAnnouncementsCount: userAnnouncements.length,
+          deletedCommentsCount: userComments.length,
+          performedBy: {
+            name: currentUser?.name || 'Super Administrador',
+            email: currentUser?.email || 'super@conjuntos.app',
+            role: currentUser?.role || 'super_admin',
+          },
+          deletionDate: new Date().toLocaleString('es-ES'),
+        });
+      } catch (err) {
+        console.error('Error al generar PDF de certificado:', err);
+      }
+    }
+
+    // 10. Log in system audit table
+    logAudit('PURGE_USER_CASCADE', 'User', null, {
+      deletedUser: {
+        id: targetUser.id,
+        name: targetUser.name,
+        email: targetUser.email,
+        role: targetUser.role,
+        apartment_number: targetUser.apartment_number,
+      },
+      deletedApartments: userApts.length,
+      deletedIncidents: userIncidents.length,
+      deletedReservations: userReservations.length,
+      deletedVisitors: userVisitors.length,
+      deletedAnnouncements: userAnnouncements.length,
+      deletedComments: userComments.length,
+      purgedBy: currentUser?.email,
+    });
+
+    soundEngine.playTrashWhoosh();
+
+    return {
+      success: true,
+      message: `Cuenta de ${targetUser.name} y todas sus propiedades/registros han sido borrados de la base de datos. Se ha generado y descargado el Certificado de Auditoría en PDF.`,
+      deletedSummary: {
+        user: targetUser,
+        apartments: userApts.length,
+        incidents: userIncidents.length,
+        reservations: userReservations.length,
+        visitors: userVisitors.length,
+        announcements: userAnnouncements.length,
+        comments: userComments.length,
+      },
+    };
+  };
+
   // ADMIN OPERATIONS
   const approveResident = (userId: string, apartmentNumber: string) => {
     const user = users.find((u) => u.id === userId);
@@ -791,8 +1204,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const createAnnouncement = (title: string, body: string, attachments?: string[]) => {
     if (!currentComplex || !currentUser) return;
 
+    const tempId = Date.now();
     const newAnnouncement: Announcement = {
-      id: Date.now(),
+      id: tempId,
       residential_complex_id: currentComplex.id,
       title: title.trim(),
       body: body.trim(),
@@ -804,7 +1218,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updated_at: new Date().toISOString(),
     };
 
-    setAnnouncements((prev) => [newAnnouncement, ...prev]);
+    setAnnouncements((prev) => {
+      // Check if already present
+      if (prev.some((a) => a.id === tempId || (a.title === newAnnouncement.title && a.residential_complex_id === currentComplex.id && Math.abs(new Date(a.created_at).getTime() - new Date(newAnnouncement.created_at).getTime()) < 3000))) {
+        return prev;
+      }
+      return [newAnnouncement, ...prev];
+    });
 
     // Broadcast notification to all complex residents
     users
@@ -821,7 +1241,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         title: newAnnouncement.title,
         body: newAnnouncement.body,
         attachments: newAnnouncement.attachments,
-      }).then();
+      }).select().single().then(({ data }) => {
+        if (data) {
+          // Replace temp ID with Postgres DB ID
+          setAnnouncements((prev) => prev.map((a) => (a.id === tempId ? { ...a, id: data.id } : a)));
+        }
+      });
     }
   };
 
@@ -1179,6 +1604,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         markComplexPaid,
         toggleComplexStatus,
         changeComplexPlan,
+        createAdmin,
+        deleteAdmin,
+        purgeUserAccountCascading,
         approveResident,
         rejectResident,
         createBlock,

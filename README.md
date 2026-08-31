@@ -219,10 +219,15 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
 
 Gracias a **Capacitor 6.x**, la aplicación móvil es un **espejo 100% fiel** de la aplicación web, sin necesidad de mantener dos códigos separados.
 
-### Pasos en tu computadora local:
+### Pasos en tu computadora local con Java 17:
 
 1. **Descargar y descomprimir el proyecto.**
-2. **Abrir la terminal en la carpeta del proyecto y ejecutar:**
+2. **Compatibilidad con Java 17:**
+   - Capacitor y Gradle 8+ son nativamente compatibles con **Java 17 (JDK 17)**.
+   - Si tienes múltiples versiones de Java instaladas, asegúrate de que tu variable de entorno `JAVA_HOME` apunte a tu JDK 17 (por ejemplo en Windows: `C:\Program Files\Java\jdk-17` o en Linux/Mac: `/usr/lib/jvm/java-17-openjdk`).
+   - En Android Studio: ve a **Settings** &rarr; **Build, Execution, Deployment** &rarr; **Build Tools** &rarr; **Gradle** &rarr; **Gradle JDK** y selecciona **Java 17 (JDK 17)**.
+
+3. **Abrir la terminal en la carpeta del proyecto y ejecutar:**
    ```bash
    # 1. Instalar dependencias
    npm install
@@ -230,13 +235,16 @@ Gracias a **Capacitor 6.x**, la aplicación móvil es un **espejo 100% fiel** de
    # 2. Compilar el frontend web para producción
    npm run build
 
-   # 3. Agregar la plataforma Android
+   # 3. Agregar la plataforma Android (si aún no la tienes)
    npx cap add android
 
-   # 4. Abrir en Android Studio
+   # 4. Sincronizar cambios de la web a Android
+   npx cap sync android
+
+   # 5. Abrir el proyecto en Android Studio
    npx cap open android
    ```
-3. **Generar el APK en Android Studio:**
+4. **Generar el APK en Android Studio:**
    - En el menú superior de Android Studio: **Build** &rarr; **Build Bundle(s) / APK(s)** &rarr; **Build APK(s)**.
    - O conecta tu teléfono por USB con *Depuración USB* activada y presiona el botón **Run (▶)**.
 

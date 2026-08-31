@@ -21,9 +21,6 @@ const config = {
       backgroundColor: '#020617',
       overlaysWebView: false,
     },
-    PushNotifications: {
-      presentationOptions: ['badge', 'sound', 'alert'],
-    },
     LocalNotifications: {
       smallIcon: 'ic_stat_icon_config_sample',
       iconColor: '#7C3AED',

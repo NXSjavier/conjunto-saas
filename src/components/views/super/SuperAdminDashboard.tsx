@@ -8,6 +8,8 @@ import {
   CheckCircle2,
   Plus,
   ArrowRight,
+  UserX,
+  ShieldAlert,
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { useData } from '../../../context/DataContext';
@@ -54,6 +56,14 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onNavi
       icon: <Users className="h-5 w-5" />,
       variant: 'sky' as const,
       onClick: () => onNavigate('super_admins'),
+    },
+    {
+      id: 'sq-purge',
+      label: 'Usuarios & Purga BD + PDF',
+      description: 'Borrado definitivo con certificado',
+      icon: <UserX className="h-5 w-5" />,
+      variant: 'rose' as const,
+      onClick: () => onNavigate('super_users'),
     },
   ];
 

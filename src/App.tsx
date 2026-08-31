@@ -37,6 +37,7 @@ import { SuperAdminDashboard } from './components/views/super/SuperAdminDashboar
 import { ComplexesView } from './components/views/super/ComplexesView';
 import { AdminsView } from './components/views/super/AdminsView';
 import { SubscriptionsView } from './components/views/super/SubscriptionsView';
+import { SuperUsersView } from './components/views/super/SuperUsersView';
 
 const AppContent: React.FC = () => {
   const { currentUser, isLoading } = useAuth();
@@ -81,6 +82,8 @@ const AppContent: React.FC = () => {
         return <ComplexesView />;
       case 'super_admins':
         return <AdminsView />;
+      case 'super_users':
+        return <SuperUsersView />;
       case 'super_subscriptions':
         return <SubscriptionsView />;
 

@@ -21,6 +21,8 @@ import {
   Copy,
   Smartphone,
   Check,
+  UserX,
+  ShieldAlert,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
@@ -105,6 +107,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               { id: 'super_dashboard', label: 'Dashboard Global', icon: <LayoutDashboard className="h-4 w-4" /> },
               { id: 'super_complexes', label: 'Conjuntos Residenciales', icon: <Building2 className="h-4 w-4" /> },
               { id: 'super_admins', label: 'Administradores', icon: <Users className="h-4 w-4" /> },
+              { id: 'super_users', label: 'Usuarios & Purga BD', icon: <UserX className="h-4 w-4" /> },
               { id: 'super_subscriptions', label: 'Suscripciones SaaS', icon: <CreditCard className="h-4 w-4" /> },
             ],
           },

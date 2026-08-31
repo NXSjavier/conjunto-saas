@@ -8,11 +8,11 @@ import {
   Camera,
   Check,
   Search,
-  ArrowRight,
-  ShieldCheck,
-  Sparkles,
   ChevronRight,
   KeyRound,
+  ShieldAlert,
+  ArrowLeft,
+  Key,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
@@ -20,21 +20,33 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { FlashMessage } from '../ui/FlashMessage';
+import { Modal } from '../ui/Modal';
 
 export const GuestLayout: React.FC = () => {
-  const { login, loginAsRole, registerWithCode, registerWithoutCode } = useAuth();
+  const { login, requestPasswordReset, verifyCodeAndResetPassword, registerWithCode, registerWithoutCode } = useAuth();
   const { complexes } = useData();
 
   const [mode, setMode] = useState<'login' | 'register_code' | 'register_no_code'>('login');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('password');
+  const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [flash, setFlash] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
+  // Password recovery modal state
+  const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotCode, setForgotCode] = useState('');
+  const [forgotNewPass, setForgotNewPass] = useState('');
+  const [forgotConfirmPass, setForgotConfirmPass] = useState('');
+  const [forgotStep, setForgotStep] = useState<'email' | 'code_and_password'>('email');
+  const [isForgotLoading, setIsForgotLoading] = useState(false);
+  const [generatedCodeNotification, setGeneratedCodeNotification] = useState<string | null>(null);
+
   // Register with code state
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
   const [regPhone, setRegPhone] = useState('');
   const [regCode, setRegCode] = useState('');
   const [regAptNumber, setRegAptNumber] = useState('');
@@ -42,6 +54,7 @@ export const GuestLayout: React.FC = () => {
   // Register without code state
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedComplexId, setSelectedComplexId] = useState<number | null>(null);
+  const [noCodePassword, setNoCodePassword] = useState('');
   const [reqBlockOrApt, setReqBlockOrApt] = useState('');
   const [facePhoto, setFacePhoto] = useState<string | null>(null);
 
@@ -61,8 +74,8 @@ export const GuestLayout: React.FC = () => {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) {
-      setFlash({ message: 'Ingresa tu correo electrónico', type: 'error' });
+    if (!email.trim() || !password.trim()) {
+      setFlash({ message: 'Por favor ingresa tu correo y tu contraseña', type: 'error' });
       return;
     }
     setIsLoading(true);
@@ -72,15 +85,84 @@ export const GuestLayout: React.FC = () => {
       if (!res.success) {
         setFlash({ message: res.message || 'Error al iniciar sesión', type: 'error' });
       }
-    }, 400);
+    }, 300);
+  };
+
+  const handleRequestReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) {
+      setFlash({ message: 'Por favor ingresa tu correo electrónico', type: 'error' });
+      return;
+    }
+
+    setIsForgotLoading(true);
+    try {
+      const res = await requestPasswordReset(forgotEmail);
+      setIsForgotLoading(false);
+      if (res.success) {
+        setForgotStep('code_and_password');
+        if (res.generatedCode) {
+          setGeneratedCodeNotification(res.generatedCode);
+        }
+        setFlash({ message: res.message, type: 'success' });
+      } else {
+        setFlash({ message: res.message, type: 'error' });
+      }
+    } catch {
+      setIsForgotLoading(false);
+      setFlash({ message: 'Ocurrió un error al solicitar el código', type: 'error' });
+    }
+  };
+
+  const handleConfirmReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotCode.trim() || !forgotNewPass.trim()) {
+      setFlash({ message: 'Por favor ingresa el código y la nueva contraseña', type: 'error' });
+      return;
+    }
+    if (forgotCode.trim().length !== 4) {
+      setFlash({ message: 'El código de seguridad debe tener exactamente 4 dígitos', type: 'error' });
+      return;
+    }
+    if (forgotNewPass !== forgotConfirmPass) {
+      setFlash({ message: 'Las contraseñas no coinciden', type: 'error' });
+      return;
+    }
+
+    setIsForgotLoading(true);
+    try {
+      const res = await verifyCodeAndResetPassword(forgotEmail, forgotCode, forgotNewPass);
+      setIsForgotLoading(false);
+      if (res.success) {
+        setFlash({ message: res.message, type: 'success' });
+        setEmail(forgotEmail);
+        setPassword(forgotNewPass);
+        setIsForgotModalOpen(false);
+        setForgotStep('email');
+        setForgotCode('');
+        setForgotNewPass('');
+        setForgotConfirmPass('');
+        setGeneratedCodeNotification(null);
+      } else {
+        setFlash({ message: res.message, type: 'error' });
+      }
+    } catch {
+      setIsForgotLoading(false);
+      setFlash({ message: 'Error al cambiar la contraseña', type: 'error' });
+    }
   };
 
   const handleRegisterWithCode = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!regName.trim() || !regEmail.trim() || !regCode.trim() || !regAptNumber.trim()) {
+    if (!regName.trim() || !regEmail.trim() || !regCode.trim() || !regAptNumber.trim() || !regPassword.trim()) {
       setFlash({ message: 'Por favor completa todos los campos requeridos', type: 'error' });
       return;
     }
+    if (regPassword.length < 6) {
+      setFlash({ message: 'La contraseña debe tener al menos 6 caracteres', type: 'error' });
+      return;
+    }
+
     setIsLoading(true);
     setTimeout(() => {
       const res = registerWithCode({
@@ -89,6 +171,7 @@ export const GuestLayout: React.FC = () => {
         phone: regPhone,
         code: regCode,
         apartmentNumber: regAptNumber,
+        password: regPassword,
       });
       setIsLoading(false);
       if (res.success) {
@@ -101,8 +184,12 @@ export const GuestLayout: React.FC = () => {
 
   const handleRegisterWithoutCode = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!regName.trim() || !regEmail.trim() || !selectedComplexId || !reqBlockOrApt.trim()) {
+    if (!regName.trim() || !regEmail.trim() || !selectedComplexId || !reqBlockOrApt.trim() || !noCodePassword.trim()) {
       setFlash({ message: 'Por favor completa todos los datos requeridos y selecciona tu conjunto', type: 'error' });
+      return;
+    }
+    if (noCodePassword.length < 6) {
+      setFlash({ message: 'La contraseña debe tener al menos 6 caracteres', type: 'error' });
       return;
     }
     if (!facePhoto) {
@@ -119,6 +206,7 @@ export const GuestLayout: React.FC = () => {
         complexId: selectedComplexId,
         requestedBlockOrApt: reqBlockOrApt,
         facePhoto,
+        password: noCodePassword,
       });
       setIsLoading(false);
       if (res.success) {
@@ -158,7 +246,7 @@ export const GuestLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100/70 flex flex-col justify-center py-8 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-100/80 flex flex-col justify-center py-8 px-4 sm:px-6 lg:px-8">
       <FlashMessage
         message={flash?.message || null}
         type={flash?.type || 'success'}
@@ -174,7 +262,7 @@ export const GuestLayout: React.FC = () => {
               backgroundImage: 'url("https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800")',
             }}
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-slate-950/60 to-emerald-950/90" />
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/90 via-slate-950/70 to-emerald-950/95" />
 
           {/* Top Logo */}
           <div className="relative z-10">
@@ -184,78 +272,49 @@ export const GuestLayout: React.FC = () => {
               </div>
               <div>
                 <h1 className="text-xl font-bold tracking-tight text-white">Conjuntos App</h1>
-                <p className="text-xs text-emerald-400 font-medium">Gestión Residencial Digital</p>
+                <p className="text-xs text-emerald-400 font-medium">Gestión Residencial Profesional</p>
               </div>
             </div>
             <p className="text-xs text-slate-300 mt-6 leading-relaxed">
-              La plataforma móvil integral para condominios, edificios y conjuntos residenciales. Control de garita en tiempo real, reservas y comunicados.
+              Sistema integral para la administración, seguridad en garita y comunicación comunitaria en condominios y conjuntos cerrados.
             </p>
           </div>
 
           {/* Feature Highlights */}
-          <div className="relative z-10 space-y-3.5 my-auto">
+          <div className="relative z-10 space-y-4 my-auto">
             <div className="flex items-center gap-3 text-xs text-slate-200">
-              <div className="h-6 w-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                <Check className="h-3.5 w-3.5" />
+              <div className="h-7 w-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                <Check className="h-4 w-4" />
               </div>
-              <span>Pases de visitas con código seguro <strong>XXXX-XXXX</strong></span>
+              <span>Control de accesos y pases con código seguro</span>
             </div>
             <div className="flex items-center gap-3 text-xs text-slate-200">
-              <div className="h-6 w-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                <Check className="h-3.5 w-3.5" />
+              <div className="h-7 w-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                <Check className="h-4 w-4" />
               </div>
-              <span>Validación garita con alerta sonora de 880Hz</span>
+              <span>Notificaciones en segundo plano y alertas nativas</span>
             </div>
             <div className="flex items-center gap-3 text-xs text-slate-200">
-              <div className="h-6 w-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                <Check className="h-3.5 w-3.5" />
+              <div className="h-7 w-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                <Check className="h-4 w-4" />
               </div>
-              <span>Aprobación de residentes con foto de rostro</span>
+              <span>Validación facial y registro para residentes</span>
             </div>
             <div className="flex items-center gap-3 text-xs text-slate-200">
-              <div className="h-6 w-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                <Check className="h-3.5 w-3.5" />
+              <div className="h-7 w-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                <Check className="h-4 w-4" />
               </div>
-              <span>Comentarios en tiempo real y recibos en PDF</span>
+              <span>Comunicados oficiales y reservas en tiempo real</span>
             </div>
           </div>
 
-          {/* Quick Demo Switcher on panel */}
-          <div className="relative z-10 pt-4 border-t border-slate-800/80">
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-              <KeyRound className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Acceso Rápido Demo:</span>
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => loginAsRole('super_admin')}
-                className="text-left px-2.5 py-2 rounded-xl bg-slate-900/90 hover:bg-purple-950/80 border border-purple-900/50 text-[11px] text-purple-200 transition-all cursor-pointer"
-              >
-                <span className="font-bold block text-purple-300">Super Admin</span>
-                <span className="text-[9px] text-slate-400">superadmin@conjuntos.app</span>
-              </button>
-              <button
-                onClick={() => loginAsRole('admin')}
-                className="text-left px-2.5 py-2 rounded-xl bg-slate-900/90 hover:bg-emerald-950/80 border border-emerald-900/50 text-[11px] text-emerald-200 transition-all cursor-pointer"
-              >
-                <span className="font-bold block text-emerald-300">Admin Conjunto</span>
-                <span className="text-[9px] text-slate-400">admin@LP.app</span>
-              </button>
-              <button
-                onClick={() => loginAsRole('resident')}
-                className="text-left px-2.5 py-2 rounded-xl bg-slate-900/90 hover:bg-sky-950/80 border border-sky-900/50 text-[11px] text-sky-200 transition-all cursor-pointer"
-              >
-                <span className="font-bold block text-sky-300">Residente</span>
-                <span className="text-[9px] text-slate-400">residente@lp.app</span>
-              </button>
-              <button
-                onClick={() => loginAsRole('guard')}
-                className="text-left px-2.5 py-2 rounded-xl bg-slate-900/90 hover:bg-amber-950/80 border border-amber-900/50 text-[11px] text-amber-200 transition-all cursor-pointer"
-              >
-                <span className="font-bold block text-amber-300">Guardia Garita</span>
-                <span className="text-[9px] text-slate-400">guardia@lp.app</span>
-              </button>
-            </div>
+          {/* Footer Security Badge */}
+          <div className="relative z-10 pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+            <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
+              <KeyRound className="h-4 w-4" />
+              Autenticación Segura
+            </span>
+            <span>Versión de Producción</span>
           </div>
         </div>
 
@@ -267,7 +326,7 @@ export const GuestLayout: React.FC = () => {
               <Building2 className="h-7 w-7" />
             </div>
             <h2 className="text-xl font-bold text-slate-900">Conjuntos App</h2>
-            <p className="text-xs text-slate-500">Gestión Residencial para Android</p>
+            <p className="text-xs text-slate-500">Gestión Residencial Digital</p>
           </div>
 
           <div className="bg-white rounded-3xl shadow-xl border border-slate-200 p-6 sm:p-8">
@@ -275,7 +334,7 @@ export const GuestLayout: React.FC = () => {
             <div className="flex bg-slate-100 p-1 rounded-2xl mb-6 text-xs font-semibold">
               <button
                 onClick={() => setMode('login')}
-                className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
+                className={`flex-1 py-2.5 rounded-xl transition-all cursor-pointer ${
                   mode === 'login' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
@@ -283,7 +342,7 @@ export const GuestLayout: React.FC = () => {
               </button>
               <button
                 onClick={() => setMode('register_code')}
-                className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
+                className={`flex-1 py-2.5 rounded-xl transition-all cursor-pointer ${
                   mode === 'register_code' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
@@ -291,7 +350,7 @@ export const GuestLayout: React.FC = () => {
               </button>
               <button
                 onClick={() => setMode('register_no_code')}
-                className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
+                className={`flex-1 py-2.5 rounded-xl transition-all cursor-pointer ${
                   mode === 'register_no_code' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
@@ -303,8 +362,8 @@ export const GuestLayout: React.FC = () => {
             {mode === 'login' && (
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">Bienvenido de nuevo</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Ingresa tus credenciales para acceder a tu cuenta</p>
+                  <h3 className="text-lg font-bold text-slate-900">Iniciar Sesión</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Ingresa tu correo y contraseña registrados</p>
                 </div>
 
                 <Input
@@ -312,7 +371,7 @@ export const GuestLayout: React.FC = () => {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="ejemplo@conjuntos.app"
+                  placeholder="ejemplo@conjunto.com"
                   icon={<Mail className="h-4 w-4" />}
                   required
                 />
@@ -327,7 +386,7 @@ export const GuestLayout: React.FC = () => {
                   required
                 />
 
-                <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center justify-between text-xs pt-1">
                   <label className="flex items-center gap-2 cursor-pointer text-slate-600">
                     <input
                       type="checkbox"
@@ -337,7 +396,17 @@ export const GuestLayout: React.FC = () => {
                     />
                     <span>Recordar sesión</span>
                   </label>
-                  <span className="text-emerald-600 hover:underline cursor-pointer">¿Olvidaste tu contraseña?</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotEmail(email);
+                      setForgotStep('email');
+                      setIsForgotModalOpen(true);
+                    }}
+                    className="text-emerald-700 font-semibold hover:underline cursor-pointer bg-transparent border-0 p-0"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
                 </div>
 
                 <Button
@@ -347,45 +416,8 @@ export const GuestLayout: React.FC = () => {
                   loading={isLoading}
                   className="w-full mt-2"
                 >
-                  Iniciar Sesión
+                  Ingresar a la Plataforma
                 </Button>
-
-                {/* Mobile Quick Demo Switcher */}
-                <div className="lg:hidden pt-4 border-t border-slate-100">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                    Acceso Rápido con Cuentas Demo:
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <button
-                      type="button"
-                      onClick={() => loginAsRole('super_admin')}
-                      className="p-2 rounded-xl bg-purple-50 text-purple-700 font-semibold border border-purple-200 text-left"
-                    >
-                      👑 Super Admin
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => loginAsRole('admin')}
-                      className="p-2 rounded-xl bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200 text-left"
-                    >
-                      🏢 Administrador
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => loginAsRole('resident')}
-                      className="p-2 rounded-xl bg-sky-50 text-sky-700 font-semibold border border-sky-200 text-left"
-                    >
-                      🏠 Residente
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => loginAsRole('guard')}
-                      className="p-2 rounded-xl bg-amber-50 text-amber-700 font-semibold border border-amber-200 text-left"
-                    >
-                      👮 Guardia
-                    </button>
-                  </div>
-                </div>
               </form>
             )}
 
@@ -399,7 +431,7 @@ export const GuestLayout: React.FC = () => {
 
                 <div>
                   <Input
-                    label="Código de Conjunto Residencial"
+                    label="Código del Conjunto Residencial"
                     value={regCode}
                     onChange={(e) => setRegCode(e.target.value.toUpperCase())}
                     placeholder="Ej: LP-2026-X8T5"
@@ -414,8 +446,8 @@ export const GuestLayout: React.FC = () => {
                           <span>Conjunto encontrado: <strong>{matchedComplex.name}</strong> ({matchedComplex.city})</span>
                         </div>
                       ) : (
-                        <span className="text-[11px] text-slate-400">
-                          Demo código disponible: <strong>LP-2026-X8T5</strong>
+                        <span className="text-[11px] text-amber-600 font-medium">
+                          Código no encontrado en el sistema.
                         </span>
                       )}
                     </div>
@@ -438,6 +470,16 @@ export const GuestLayout: React.FC = () => {
                   onChange={(e) => setRegEmail(e.target.value)}
                   placeholder="juan.perez@ejemplo.com"
                   icon={<Mail className="h-4 w-4" />}
+                  required
+                />
+
+                <Input
+                  label="Crear Contraseña"
+                  type="password"
+                  value={regPassword}
+                  onChange={(e) => setRegPassword(e.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                  icon={<Lock className="h-4 w-4" />}
                   required
                 />
 
@@ -483,7 +525,7 @@ export const GuestLayout: React.FC = () => {
                   </p>
                 </div>
 
-                {/* Complex Search with Debounce */}
+                {/* Complex Search */}
                 <div>
                   <Input
                     label="1. Buscar Conjunto Residencial"
@@ -552,7 +594,7 @@ export const GuestLayout: React.FC = () => {
                     required
                   />
                   <Input
-                    label="Correo"
+                    label="Correo Electrónico"
                     type="email"
                     value={regEmail}
                     onChange={(e) => setRegEmail(e.target.value)}
@@ -562,9 +604,19 @@ export const GuestLayout: React.FC = () => {
                   />
                 </div>
 
+                <Input
+                  label="Crear Contraseña"
+                  type="password"
+                  value={noCodePassword}
+                  onChange={(e) => setNoCodePassword(e.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                  icon={<Lock className="h-4 w-4" />}
+                  required
+                />
+
                 <div className="grid grid-cols-2 gap-3">
                   <Input
-                    label="Teléfono"
+                    label="Teléfono Móvil"
                     type="tel"
                     value={regPhone}
                     onChange={(e) => setRegPhone(e.target.value)}
@@ -584,7 +636,7 @@ export const GuestLayout: React.FC = () => {
                 {/* Face Photo Capture / Simulator */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    2. Foto de Rostro para Seguridad (Requerido)
+                    2. Foto de Rostro para Identificación de Seguridad
                   </label>
                   <div className="flex items-center gap-4 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
                     <div className="h-16 w-16 rounded-xl bg-slate-200 border border-slate-300 overflow-hidden flex items-center justify-center shrink-0">
@@ -604,10 +656,10 @@ export const GuestLayout: React.FC = () => {
                           onClick={handleSimulatePhoto}
                           className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-[11px] font-bold hover:bg-emerald-700 cursor-pointer"
                         >
-                          Generar Foto
+                          Tomar Foto
                         </button>
                         <label className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-[11px] font-bold cursor-pointer inline-flex items-center">
-                          <span>Subir JPG/PNG</span>
+                          <span>Subir Imagen</span>
                           <input
                             type="file"
                             accept="image/png,image/jpeg"
@@ -632,16 +684,9 @@ export const GuestLayout: React.FC = () => {
                 </Button>
               </form>
             )}
-
-            {/* Demo Credentials Box */}
-            <div className="mt-6 pt-4 border-t border-dashed border-slate-200 text-center">
-              <p className="text-[11px] text-slate-400">
-                Credenciales Demo: <strong>password</strong> para todos los usuarios.
-              </p>
-            </div>
           </div>
 
-          {/* 3 SaaS Subscription Plan Cards (Section 3.6) */}
+          {/* SaaS Subscription Plan Cards */}
           <div className="mt-8">
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider text-center mb-4">
               Planes Disponibles para Conjuntos Residenciales
@@ -710,6 +755,147 @@ export const GuestLayout: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* PASSWORD RECOVERY MODAL (4-DIGIT CODE, MAX 3 PER MONTH) */}
+      <Modal
+        isOpen={isForgotModalOpen}
+        onClose={() => setIsForgotModalOpen(false)}
+        title="Recuperación de Contraseña"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs text-emerald-900">
+            <ShieldAlert className="h-5 w-5 text-emerald-600 shrink-0" />
+            <div>
+              <p className="font-bold">Seguridad del Sistema</p>
+              <p className="text-[11px] text-emerald-700">
+                La aplicación genera un código seguro de 4 dígitos. Máximo 3 cambios de contraseña por mes por usuario.
+              </p>
+            </div>
+          </div>
+
+          {generatedCodeNotification && (
+            <div className="p-3 bg-slate-900 text-white rounded-2xl border border-slate-700 flex items-center justify-between animate-pulse">
+              <div className="flex items-center gap-2">
+                <Key className="h-4 w-4 text-emerald-400" />
+                <span className="text-xs">Código de Seguridad Generado:</span>
+              </div>
+              <span className="font-mono font-extrabold text-lg text-emerald-400 tracking-widest">
+                {generatedCodeNotification}
+              </span>
+            </div>
+          )}
+
+          {forgotStep === 'email' ? (
+            <form onSubmit={handleRequestReset} className="space-y-4">
+              <p className="text-xs text-slate-600">
+                Ingresa el correo electrónico asociado a tu cuenta para recibir el código de verificación de 4 números.
+              </p>
+
+              <Input
+                label="Correo Electrónico Registrado"
+                type="email"
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                placeholder="ejemplo@conjunto.com"
+                icon={<Mail className="h-4 w-4" />}
+                required
+              />
+
+              <div className="flex justify-end gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsForgotModalOpen(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  loading={isForgotLoading}
+                  icon={<KeyRound className="h-4 w-4" />}
+                >
+                  Generar Código de 4 Dígitos
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleConfirmReset} className="space-y-4">
+              <p className="text-xs text-slate-600">
+                Hemos generado tu código de seguridad para <strong>{forgotEmail}</strong>. Ingrésalo a continuación junto con tu nueva clave:
+              </p>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Código de 4 Números (OTP)
+                </label>
+                <input
+                  type="text"
+                  maxLength={4}
+                  value={forgotCode}
+                  onChange={(e) => setForgotCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="4829"
+                  className="w-full text-center text-2xl font-mono font-extrabold tracking-widest py-2.5 rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-slate-900 bg-white"
+                  required
+                />
+              </div>
+
+              <Input
+                label="Nueva Contraseña"
+                type="password"
+                value={forgotNewPass}
+                onChange={(e) => setForgotNewPass(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                icon={<Lock className="h-4 w-4" />}
+                required
+              />
+
+              <Input
+                label="Confirmar Nueva Contraseña"
+                type="password"
+                value={forgotConfirmPass}
+                onChange={(e) => setForgotConfirmPass(e.target.value)}
+                placeholder="Repite la contraseña"
+                icon={<Lock className="h-4 w-4" />}
+                required
+              />
+
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  type="button"
+                  onClick={() => setForgotStep('email')}
+                  className="text-xs text-slate-500 hover:text-slate-900 flex items-center gap-1 cursor-pointer"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Cambiar Correo
+                </button>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsForgotModalOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="sm"
+                    loading={isForgotLoading}
+                  >
+                    Guardar Contraseña
+                  </Button>
+                </div>
+              </div>
+            </form>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };

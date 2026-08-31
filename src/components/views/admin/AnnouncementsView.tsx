@@ -28,6 +28,7 @@ export const AnnouncementsView: React.FC = () => {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [attachmentUrl, setAttachmentUrl] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeCommentsAnnouncementId, setActiveCommentsAnnouncementId] = useState<number | null>(null);
 
   const complexId = currentComplex?.id || 1;
@@ -35,24 +36,26 @@ export const AnnouncementsView: React.FC = () => {
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !body.trim()) return;
+    if (!title.trim() || !body.trim() || isSubmitting) return;
 
+    setIsSubmitting(true);
     createAnnouncement(
       title,
       body,
       attachmentUrl.trim() ? [attachmentUrl.trim()] : undefined
     );
 
-    setTitle('');
-    setBody('');
-    setAttachmentUrl('');
-    setIsModalOpen(false);
+    setTimeout(() => {
+      setTitle('');
+      setBody('');
+      setAttachmentUrl('');
+      setIsSubmitting(false);
+      setIsModalOpen(false);
+    }, 250);
   };
 
   const handleDelete = (id: number) => {
-    if (window.confirm('¿Estás seguro de eliminar este comunicado?')) {
-      deleteAnnouncement(id);
-    }
+    deleteAnnouncement(id);
   };
 
   return (
@@ -112,7 +115,7 @@ export const AnnouncementsView: React.FC = () => {
                     </div>
                   </div>
 
-                  {currentUser?.role === 'admin' && (
+                  {(currentUser?.role === 'admin' || currentUser?.role === 'super_admin') && (
                     <button
                       onClick={() => handleDelete(announcement.id)}
                       className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
