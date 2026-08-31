@@ -38,6 +38,7 @@ import { soundEngine } from '../lib/sound';
 import { capNotificationService } from '../lib/capacitorNotifications';
 import { supabase, isSupabaseConfigured, checkSupabaseHealth, ConnectionStatus } from '../lib/supabase';
 import { generateUserDeletionCertificatePDF } from '../lib/pdf';
+import { realtimeBus, RealtimeMessage } from '../lib/realtimeSync';
 
 
 export interface DataContextType {
@@ -455,10 +456,150 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     channelRef.current = channel;
 
+    // Listen to local BroadcastChannel and cross-tab storage events for real-time synchronization
+    const unsubscribeBus = realtimeBus.subscribe((msg: RealtimeMessage) => {
+      switch (msg.type) {
+        case 'ANNOUNCEMENT_NEW': {
+          const ann = msg.payload.announcement as Announcement;
+          if (ann) {
+            setAnnouncements((prev) => (prev.some((a) => a.id === ann.id) ? prev : [ann, ...prev]));
+            capNotificationService.sendNotification({
+              title: `📢 Comunicado: ${ann.title}`,
+              body: ann.body?.substring(0, 80) || 'Nuevo aviso de administración',
+              soundType: 'success',
+            });
+          }
+          break;
+        }
+        case 'ANNOUNCEMENT_DELETE': {
+          const id = msg.payload.id as number;
+          if (id) {
+            setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+            setComments((prev) => prev.filter((c) => c.announcement_id !== id));
+          }
+          break;
+        }
+        case 'COMMENT_NEW': {
+          const comm = msg.payload.comment as AnnouncementComment;
+          if (comm) {
+            setComments((prev) => (prev.some((c) => c.id === comm.id) ? prev : [...prev, comm]));
+          }
+          break;
+        }
+        case 'COMMENT_DELETE': {
+          const id = msg.payload.id as number;
+          if (id) {
+            setComments((prev) => prev.filter((c) => c.id !== id));
+          }
+          break;
+        }
+        case 'VISITOR_NEW': {
+          const vis = msg.payload.visitor as Visitor;
+          if (vis) {
+            setVisitors((prev) => (prev.some((v) => v.id === vis.id || v.code === vis.code) ? prev : [vis, ...prev]));
+            capNotificationService.sendNotification({
+              title: '🚗 Nuevo Pase de Visita Registrado',
+              body: `${vis.name || 'Visita'} al Depto ${vis.apartment_number || ''}`,
+              soundType: 'beep',
+            });
+          }
+          break;
+        }
+        case 'VISITOR_UPDATE': {
+          const { visitorId, updateData } = msg.payload;
+          if (visitorId) {
+            setVisitors((prev) => prev.map((v) => (v.id === visitorId ? { ...v, ...updateData } : v)));
+          }
+          break;
+        }
+        case 'RESERVATION_NEW': {
+          const res = msg.payload.reservation as Reservation;
+          if (res) {
+            setReservations((prev) => (prev.some((r) => r.id === res.id) ? prev : [res, ...prev]));
+            capNotificationService.sendNotification({
+              title: '📅 Nueva Solicitud de Reserva',
+              body: `${res.area_name} para el ${res.date}`,
+              soundType: 'beep',
+            });
+          }
+          break;
+        }
+        case 'RESERVATION_UPDATE': {
+          const { reservationId, status } = msg.payload;
+          if (reservationId) {
+            setReservations((prev) =>
+              prev.map((r) => (r.id === reservationId ? { ...r, status, updated_at: new Date().toISOString() } : r))
+            );
+          }
+          break;
+        }
+        case 'INCIDENT_NEW': {
+          const inc = msg.payload.incident as Incident;
+          if (inc) {
+            setIncidents((prev) => (prev.some((i) => i.id === inc.id) ? prev : [inc, ...prev]));
+            capNotificationService.sendNotification({
+              title: '⚠️ Nueva Incidencia Reportada',
+              body: `${inc.title || 'Incidencia'}: ${inc.description?.substring(0, 70) || ''}`,
+              soundType: 'error',
+            });
+          }
+          break;
+        }
+        case 'INCIDENT_UPDATE': {
+          const { incidentId, status } = msg.payload;
+          if (incidentId) {
+            setIncidents((prev) =>
+              prev.map((i) => (i.id === incidentId ? { ...i, status, updated_at: new Date().toISOString() } : i))
+            );
+          }
+          break;
+        }
+        case 'USER_NEW_PENDING': {
+          const u = msg.payload.user as User;
+          if (u) {
+            setUsers((prev) => (prev.some((existing) => existing.id === u.id || existing.email === u.email) ? prev : [u, ...prev]));
+            capNotificationService.sendNotification({
+              title: '👤 Nuevo Residente por Aprobar',
+              body: `${u.name} se ha registrado y espera verificación de acceso.`,
+              soundType: 'beep',
+            });
+          }
+          break;
+        }
+        case 'USER_APPROVED': {
+          const { userId, apartmentNumber } = msg.payload;
+          setUsers((prev) =>
+            prev.map((u) =>
+              u.id === userId
+                ? { ...u, status: 'active', requested_complex_id: null, apartment_number: apartmentNumber }
+                : u
+            )
+          );
+          break;
+        }
+        case 'USER_REJECTED': {
+          const { userId } = msg.payload;
+          setUsers((prev) => prev.filter((u) => u.id !== userId));
+          break;
+        }
+        case 'USER_PURGED': {
+          const { userId } = msg.payload;
+          setUsers((prev) => prev.filter((u) => u.id !== userId));
+          setIncidents((prev) => prev.filter((i) => i.reported_by !== userId));
+          setReservations((prev) => prev.filter((r) => r.user_id !== userId));
+          setVisitors((prev) => prev.filter((v) => v.created_by !== userId && v.requested_by !== userId));
+          break;
+        }
+        default:
+          break;
+      }
+    });
+
     return () => {
       if (supabase && channelRef.current) {
         supabase.removeChannel(channelRef.current);
       }
+      unsubscribeBus();
     };
   }, []);
 
@@ -930,6 +1071,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 7. Remove User from User List and Local Auth Passwords
     setUsers((prev) => prev.filter((u) => u.id !== userId));
 
+    // Broadcast in real-time
+    realtimeBus.broadcast('USER_PURGED', { userId });
+
     try {
       const passwords = JSON.parse(localStorage.getItem('conjuntos_passwords') || '{}');
       delete passwords[targetUser.email.toLowerCase()];
@@ -1025,6 +1169,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       )
     );
 
+    // Broadcast in real-time across tabs/windows
+    realtimeBus.broadcast('USER_APPROVED', { userId, apartmentNumber });
+
     // Notify resident
     sendNotification(
       userId,
@@ -1048,6 +1195,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const rejectResident = (userId: string) => {
     const user = users.find((u) => u.id === userId);
     setUsers((prev) => prev.filter((u) => u.id !== userId));
+    realtimeBus.broadcast('USER_REJECTED', { userId });
     logAudit('REJECT_RESIDENT', 'User', null, { userId });
 
     if (supabase && isSupabaseConfigured && user) {
@@ -1226,6 +1374,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return [newAnnouncement, ...prev];
     });
 
+    // Broadcast in real-time across tabs/windows
+    realtimeBus.broadcast('ANNOUNCEMENT_NEW', { announcement: newAnnouncement });
+
     // Broadcast notification to all complex residents
     users
       .filter((u) => u.residential_complex_id === currentComplex.id && u.role === 'resident')
@@ -1253,6 +1404,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const deleteAnnouncement = (id: number) => {
     setAnnouncements((prev) => prev.filter((a) => a.id !== id));
     setComments((prev) => prev.filter((c) => c.announcement_id !== id));
+    realtimeBus.broadcast('ANNOUNCEMENT_DELETE', { id });
     logAudit('DELETE_ANNOUNCEMENT', 'Announcement', id);
 
     if (supabase && isSupabaseConfigured) {
@@ -1267,6 +1419,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIncidents((prev) =>
       prev.map((i) => (i.id === id ? { ...i, status, updated_at: new Date().toISOString() } : i))
     );
+
+    // Broadcast in real-time
+    realtimeBus.broadcast('INCIDENT_UPDATE', { incidentId: id, status });
 
     // Notify resident who reported it
     sendNotification(
@@ -1290,6 +1445,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setReservations((prev) =>
       prev.map((r) => (r.id === id ? { ...r, status, updated_at: new Date().toISOString() } : r))
     );
+
+    // Broadcast in real-time
+    realtimeBus.broadcast('RESERVATION_UPDATE', { reservationId: id, status });
 
     // Notify resident
     sendNotification(
@@ -1324,6 +1482,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setComments((prev) => [...prev, newComment]);
 
+    // Broadcast in real-time
+    realtimeBus.broadcast('COMMENT_NEW', { comment: newComment });
+
     // If resident commented, notify admin
     if (currentUser.role === 'resident') {
       users
@@ -1351,6 +1512,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteComment = (commentId: number) => {
     setComments((prev) => prev.filter((c) => c.id !== commentId));
+    realtimeBus.broadcast('COMMENT_DELETE', { id: commentId });
     logAudit('DELETE_COMMENT', 'AnnouncementComment', commentId);
 
     if (supabase && isSupabaseConfigured) {
@@ -1387,6 +1549,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     setVisitors((prev) => [newVisitor, ...prev]);
+
+    // Broadcast in real-time to guard and other users
+    realtimeBus.broadcast('VISITOR_NEW', { visitor: newVisitor });
 
     // Notify guards
     users
@@ -1444,6 +1609,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setIncidents((prev) => [newIncident, ...prev]);
 
+    // Broadcast in real-time
+    realtimeBus.broadcast('INCIDENT_NEW', { incident: newIncident });
+
     // Notify admins
     users
       .filter((u) => u.residential_complex_id === currentComplex.id && u.role === 'admin')
@@ -1495,6 +1663,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setReservations((prev) => [newReservation, ...prev]);
 
+    // Broadcast in real-time
+    realtimeBus.broadcast('RESERVATION_NEW', { reservation: newReservation });
+
     // Notify admins
     users
       .filter((u) => u.residential_complex_id === currentComplex.id && u.role === 'admin')
@@ -1545,6 +1716,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     setVisitors((prev) => prev.map((v) => (v.id === visitorId ? { ...v, ...updateData } : v)));
+
+    // Broadcast in real-time
+    realtimeBus.broadcast('VISITOR_UPDATE', { visitorId, updateData });
 
     // Notify resident who requested the pass
     sendNotification(

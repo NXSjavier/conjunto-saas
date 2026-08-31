@@ -3,6 +3,7 @@ import { User, ResidentialComplex } from '../types';
 import { INITIAL_USERS, INITIAL_COMPLEXES } from '../lib/initialData';
 import { soundEngine } from '../lib/sound';
 import { capNotificationService } from '../lib/capacitorNotifications';
+import { realtimeBus } from '../lib/realtimeSync';
 
 export interface PasswordResetRecord {
   email: string;
@@ -350,6 +351,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     saveSession(newUser, complex);
     soundEngine.playSuccessChime();
+
+    // Broadcast in real-time across tabs/windows
+    realtimeBus.broadcast('USER_NEW_PENDING', { user: newUser });
+
     return { success: true };
   };
 
@@ -392,6 +397,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const reqComplex = complexes.find((c) => c.id === data.complexId);
 
     soundEngine.playNotificationBeep();
+
+    // Broadcast immediately so admin sees new pending resident with photo in real-time
+    realtimeBus.broadcast('USER_NEW_PENDING', { user: newUser });
+
     return {
       success: true,
       message: `Registro enviado con éxito. Tu cuenta está en espera de aprobación por el administrador de ${reqComplex?.name || 'el conjunto'}.`,
