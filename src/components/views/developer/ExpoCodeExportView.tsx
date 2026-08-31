@@ -70,9 +70,9 @@ conjuntos-app-mobile/
 ├── supabase/
 │   └── migrations/
 │       └── 01_initial_schema.sql       # Tables, RLS, Foreign Keys, Realtime triggers
-├── app.json                            # Expo SDK 52 config (Android package, FCM)
+├── app.json                            # Expo SDK 54 config (Android package, FCM)
 ├── tailwind.config.js                  # NativeWind v4 Tailwind configuration
-└── package.json                        # Expo 52, NativeWind, Supabase, Lucide
+└── package.json                        # Expo SDK 54 (Client v54.0.8), NativeWind, Supabase
 `;
 
   const codeSnippets: Record<string, string> = {
@@ -255,8 +255,8 @@ const ExpoSecureStoreAdapter = {
   },
 };
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://your-project.supabase.co';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'your-anon-key';
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://kptuyksmdomgqntsdzsu.supabase.co';
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtwdHV5a3NtZG9tZ3FudHNkenN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3OTg4ODQsImV4cCI6MjEwMzM3NDg4NH0.hGMnZHjG_IHJyCvgE67vPUGRV6WU7Nh2jfsTUcgkUcU';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -387,19 +387,19 @@ export default function RootLayout() {
     "@react-native-async-storage/async-storage": "1.23.1",
     "@supabase/supabase-js": "^2.49.1",
     "clsx": "^2.1.1",
-    "expo": "~52.0.0",
-    "expo-constants": "~17.0.0",
-    "expo-device": "~7.0.0",
-    "expo-image-picker": "~16.0.0",
-    "expo-notifications": "~0.29.0",
-    "expo-router": "~4.0.0",
-    "expo-secure-store": "~14.0.0",
-    "expo-status-bar": "~2.0.0",
+    "expo": "~54.0.8",
+    "expo-constants": "~17.1.0",
+    "expo-device": "~7.1.0",
+    "expo-image-picker": "~16.1.0",
+    "expo-notifications": "~0.30.0",
+    "expo-router": "~4.2.0",
+    "expo-secure-store": "~14.1.0",
+    "expo-status-bar": "~2.1.0",
     "jspdf": "^2.5.2",
     "lucide-react-native": "^0.475.0",
     "nativewind": "^4.0.1",
     "react": "18.3.1",
-    "react-native": "0.76.7",
+    "react-native": "0.78.0",
     "react-native-reanimated": "~3.16.1",
     "react-native-safe-area-context": "4.12.0",
     "react-native-screens": "~4.4.0",
@@ -427,9 +427,9 @@ export default function RootLayout() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Código y Configuración Expo React Native (SDK 52)"
-        subtitle="Estructura de archivos y configuración para Android listo para compilar con EAS / Expo Go"
-        badge={<Badge variant="purple">Android Only • Supabase + NativeWind</Badge>}
+        title="Código y Configuración Expo React Native (SDK 54 - Cliente v54.0.8)"
+        subtitle="Estructura de archivos y configuración para Android listo para compilar con Expo Go (v54.0.8) y EAS Build"
+        badge={<Badge variant="purple">Expo SDK 54 • Cliente v54.0.8 • Supabase</Badge>}
         actions={
           <Button
             variant="primary"

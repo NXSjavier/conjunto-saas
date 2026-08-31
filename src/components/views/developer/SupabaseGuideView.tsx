@@ -463,11 +463,11 @@ INSERT INTO storage.buckets (id, name, public) VALUES ('incident-attachments', '
                   <p className="text-xs text-slate-600 mt-0.5">
                     En Supabase ve a <strong>Project Settings ⚙️ &rarr; API</strong>. Copia la <strong>Project URL</strong> y la <strong>anon / public key</strong> en tu archivo <code>.env</code>:
                   </p>
-                  <div className="bg-slate-950 p-3 rounded-lg font-mono text-[11px] text-emerald-400 mt-2">
-                    VITE_SUPABASE_URL=https://tu-proyecto.supabase.co<br />
-                    VITE_SUPABASE_ANON_KEY=tu-clave-anon-aqui<br />
-                    EXPO_PUBLIC_SUPABASE_URL=https://tu-proyecto.supabase.co<br />
-                    EXPO_PUBLIC_SUPABASE_ANON_KEY=tu-clave-anon-aqui
+                  <div className="bg-slate-950 p-3 rounded-lg font-mono text-[11px] text-emerald-400 mt-2 break-all">
+                    VITE_SUPABASE_URL=https://kptuyksmdomgqntsdzsu.supabase.co<br />
+                    VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtwdHV5a3NtZG9tZ3FudHNkenN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3OTg4ODQsImV4cCI6MjEwMzM3NDg4NH0.hGMnZHjG_IHJyCvgE67vPUGRV6WU7Nh2jfsTUcgkUcU<br />
+                    EXPO_PUBLIC_SUPABASE_URL=https://kptuyksmdomgqntsdzsu.supabase.co<br />
+                    EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtwdHV5a3NtZG9tZ3FudHNkenN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3OTg4ODQsImV4cCI6MjEwMzM3NDg4NH0.hGMnZHjG_IHJyCvgE67vPUGRV6WU7Nh2jfsTUcgkUcU
                   </div>
                 </div>
               </div>

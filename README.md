@@ -379,15 +379,15 @@ EXPO_PUBLIC_FIREBASE_PROJECT_ID=
 
 ---
 
-## 📲 Exportación a Expo React Native (Android)
+## 📲 Exportación a Expo React Native (Android - SDK 54 & Cliente v54.0.8)
 
-Para compilar la aplicación móvil nativa con **Expo SDK 52** y **NativeWind**:
+Para compilar la aplicación móvil nativa con **Expo SDK 54 (Expo Go Cliente v54.0.8)** y **NativeWind**:
 1. Abre la vista **"Código Expo React Native"** o **"Guía Supabase & README"** en el menú de la aplicación.
 2. Copia los archivos preconfigurados (`app.json`, `package.json`, `app/_layout.tsx`, `lib/supabase.ts`, etc.).
 3. Ejecuta en tu terminal local:
    ```bash
    npx create-expo-app@latest conjuntos-mobile --template blank-typescript
    cd conjuntos-mobile
-   npm install @supabase/supabase-js expo-secure-store expo-notifications expo-image-picker nativewind
+   npm install expo@~54.0.8 @supabase/supabase-js expo-secure-store expo-notifications expo-image-picker nativewind
    npx expo start
    ```
