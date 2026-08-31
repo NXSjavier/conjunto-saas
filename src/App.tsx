@@ -38,10 +38,6 @@ import { ComplexesView } from './components/views/super/ComplexesView';
 import { AdminsView } from './components/views/super/AdminsView';
 import { SubscriptionsView } from './components/views/super/SubscriptionsView';
 
-// Developer Export View
-import { ExpoCodeExportView } from './components/views/developer/ExpoCodeExportView';
-import { SupabaseGuideView } from './components/views/developer/SupabaseGuideView';
-
 const AppContent: React.FC = () => {
   const { currentUser, isLoading } = useAuth();
   const [currentView, setCurrentView] = useState<string>('admin_dashboard');
@@ -53,11 +49,11 @@ const AppContent: React.FC = () => {
     if (currentUser.role === 'super_admin') {
       setCurrentView((prev) => (prev.startsWith('super_') ? prev : 'super_dashboard'));
     } else if (currentUser.role === 'admin') {
-      setCurrentView((prev) => (prev.startsWith('admin_') || prev === 'expo_code_export' ? prev : 'admin_dashboard'));
+      setCurrentView((prev) => (prev.startsWith('admin_') ? prev : 'admin_dashboard'));
     } else if (currentUser.role === 'resident') {
-      setCurrentView((prev) => (prev.startsWith('resident_') || prev === 'expo_code_export' ? prev : 'resident_dashboard'));
+      setCurrentView((prev) => (prev.startsWith('resident_') ? prev : 'resident_dashboard'));
     } else if (currentUser.role === 'guard') {
-      setCurrentView((prev) => (prev.startsWith('guard_') || prev === 'expo_code_export' ? prev : 'guard_dashboard'));
+      setCurrentView((prev) => (prev.startsWith('guard_') ? prev : 'guard_dashboard'));
     }
   }, [currentUser?.role]);
 
@@ -135,12 +131,6 @@ const AppContent: React.FC = () => {
         return <GuardVisitorValidatorView />;
       case 'guard_directory':
         return <GuardDirectoryView />;
-
-      // Developer Views
-      case 'supabase_guide':
-        return <SupabaseGuideView />;
-      case 'expo_code_export':
-        return <ExpoCodeExportView />;
 
       default:
         if (currentUser.role === 'super_admin') return <SuperAdminDashboard onNavigate={setCurrentView} />;

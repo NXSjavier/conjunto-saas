@@ -35,6 +35,7 @@ import {
 import { useAuth } from './AuthContext';
 import { generateComplexCode, generateVisitorCode } from '../lib/utils';
 import { soundEngine } from '../lib/sound';
+import { capNotificationService } from '../lib/capacitorNotifications';
 import { supabase, isSupabaseConfigured, checkSupabaseHealth, ConnectionStatus } from '../lib/supabase';
 
 export interface DataContextType {
@@ -193,42 +194,55 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const [
           complexesRes,
+          profilesRes,
           announcementsRes,
           commentsRes,
           incidentsRes,
           reservationsRes,
           visitorsRes,
+          auditsRes,
         ] = await Promise.all([
           supabase.from('residential_complexes').select('*'),
+          supabase.from('profiles').select('*'),
           supabase.from('announcements').select('*'),
           supabase.from('announcement_comments').select('*'),
           supabase.from('incidents').select('*'),
           supabase.from('reservations').select('*'),
           supabase.from('visitors').select('*'),
+          supabase.from('audits').select('*').order('created_at', { ascending: false }),
         ]);
 
         if (complexesRes.data && complexesRes.data.length > 0) {
           setComplexes(complexesRes.data);
         }
-        if (announcementsRes.data && announcementsRes.data.length > 0) {
+        if (profilesRes.data && profilesRes.data.length > 0) {
+          setUsers(profilesRes.data as User[]);
+        }
+        if (announcementsRes.data) {
           setAnnouncements(announcementsRes.data);
         }
-        if (commentsRes.data && commentsRes.data.length > 0) {
+        if (commentsRes.data) {
           setComments(commentsRes.data);
         }
-        if (incidentsRes.data && incidentsRes.data.length > 0) {
+        if (incidentsRes.data) {
           setIncidents(incidentsRes.data);
         }
-        if (reservationsRes.data && reservationsRes.data.length > 0) {
+        if (reservationsRes.data) {
           setReservations(reservationsRes.data);
         }
-        if (visitorsRes.data && visitorsRes.data.length > 0) {
+        if (visitorsRes.data) {
           setVisitors(visitorsRes.data);
+        }
+        if (auditsRes.data) {
+          setAudits(auditsRes.data);
         }
       } catch (err) {
         console.warn('Supabase initial fetch warning (using local store fallback):', err);
       }
     };
+
+    // Request notification permission for background alerts on startup
+    capNotificationService.requestPermissions();
 
     loadInitialSupabaseData();
 
@@ -240,8 +254,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         { event: '*', schema: 'public', table: 'announcement_comments' },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            const newComm = payload.new as AnnouncementComment;
-            setComments((prev) => (prev.some((c) => c.id === newComm.id) ? prev : [...prev, newComm]));
+            const newComm直接 = payload.new as AnnouncementComment;
+            setComments((prev) => (prev.some((c) => c.id === newComm直接.id) ? prev : [...prev, newComm直接]));
           } else if (payload.eventType === 'DELETE') {
             const oldId = payload.old?.id;
             if (oldId) setComments((prev) => prev.filter((c) => c.id !== oldId));
@@ -255,9 +269,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (payload.eventType === 'INSERT') {
             const newVis = payload.new as Visitor;
             setVisitors((prev) => (prev.some((v) => v.id === newVis.id) ? prev : [newVis, ...prev]));
+            capNotificationService.sendNotification({
+              title: '🚗 Nuevo Pase de Visita Registrado',
+              body: `${newVis.name || 'Visita'} al Depto ${newVis.apartment_number || ''}`,
+              soundType: 'beep',
+            });
           } else if (payload.eventType === 'UPDATE') {
             const updatedVis = payload.new as Visitor;
             setVisitors((prev) => prev.map((v) => (v.id === updatedVis.id ? { ...v, ...updatedVis } : v)));
+            if (updatedVis.status === 'in') {
+              capNotificationService.sendNotification({
+                title: '✅ Ingreso en Garita Registrado',
+                body: `Visita ${updatedVis.name || ''} ingresó al condominio`,
+                soundType: 'success',
+              });
+            }
           }
         }
       )
@@ -266,8 +292,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         { event: '*', schema: 'public', table: 'incidents' },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            const newInc = payload.new as Incident;
-            setIncidents((prev) => (prev.some((i) => i.id === newInc.id) ? prev : [newInc, ...prev]));
+            const newInc最佳 = payload.new as Incident;
+            setIncidents((prev) => (prev.some((i) => i.id === newInc最佳.id) ? prev : [newInc最佳, ...prev]));
+            capNotificationService.sendNotification({
+              title: '⚠️ Nueva Incidencia Reportada',
+              body: `${newInc最佳.title || 'Incidencia'}: ${newInc最佳.description?.substring(0, 70) || ''}`,
+              soundType: 'error',
+            });
           } else if (payload.eventType === 'UPDATE') {
             const updatedInc = payload.new as Incident;
             setIncidents((prev) => prev.map((i) => (i.id === updatedInc.id ? { ...i, ...updatedInc } : i)));
@@ -281,6 +312,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (payload.eventType === 'INSERT') {
             const newRes = payload.new as Reservation;
             setReservations((prev) => (prev.some((r) => r.id === newRes.id) ? prev : [newRes, ...prev]));
+            capNotificationService.sendNotification({
+              title: '📅 Nueva Solicitud de Reserva',
+              body: `${newRes.area_name} para el ${newRes.date}`,
+              soundType: 'beep',
+            });
           } else if (payload.eventType === 'UPDATE') {
             const updatedRes = payload.new as Reservation;
             setReservations((prev) => prev.map((r) => (r.id === updatedRes.id ? { ...r, ...updatedRes } : r)));
@@ -294,9 +330,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (payload.eventType === 'INSERT') {
             const newAnn = payload.new as Announcement;
             setAnnouncements((prev) => (prev.some((a) => a.id === newAnn.id) ? prev : [newAnn, ...prev]));
+            capNotificationService.sendNotification({
+              title: `📢 Comunicado: ${newAnn.title}`,
+              body: newAnn.body?.substring(0, 80) || 'Nuevo aviso de administración',
+              soundType: 'success',
+            });
           } else if (payload.eventType === 'DELETE') {
             const oldId = payload.old?.id;
             if (oldId) setAnnouncements((prev) => prev.filter((a) => a.id !== oldId));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'audits' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newAud = payload.new as Audit;
+            setAudits((prev) => (prev.some((a) => a.id === newAud.id) ? prev : [newAud, ...prev]));
           }
         }
       )

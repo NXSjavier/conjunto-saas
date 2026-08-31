@@ -1,18 +1,16 @@
-# 🏢 Conjuntos App — Sistema Integral de Gestión Residencial SaaS
+# 🏢 Conjuntos App — Sistema Integral de Gestión Residencial SaaS (Web & Móvil Android Capacitor)
 
-Sistema multi-tenant de gestión para conjuntos residenciales, condominios y edificios con soporte en tiempo real, control de acceso en garita, gestión de visitantes con códigos seguros, reservas de áreas comunes, comunicados con comentarios en vivo, reporte de incidencias y arquitectura lista para Supabase y Expo React Native (Android).
+Sistema multi-tenant de gestión para conjuntos residenciales, condominios y edificios con soporte en tiempo real, control de acceso en garita, gestión de visitantes con códigos seguros, reservas de áreas comunes, comunicados con comentarios en vivo, reporte de incidencias y arquitectura espejo 1:1 con **Capacitor 6.x** y **Supabase Realtime**.
 
 ---
 
 ## 📑 Tabla de Contenidos
 1. [Arquitectura y Roles del Sistema](#-arquitectura-y-roles-del-sistema)
-2. [Estado Actual y Conexión con Supabase](#-estado-actual-y-conexión-con-supabase)
-3. [¿Cómo integrar tu propia Base de Datos Supabase? (Paso a Paso)](#-cómo-integrar-tu-propia-base-de-datos-supabase-paso-a-paso)
-4. [Script SQL Completo para Supabase (Tablas, RLS, Storage y Realtime)](#-script-sql-completo-para-supabase)
-5. [¿Qué falta para que esté 100% en Tiempo Real en Producción?](#-qué-falta-para-que-esté-100-en-tiempo-real-en-producción)
-6. [Estructura del Proyecto](#-estructura-del-proyecto)
-7. [Configuración de Variables de Entorno](#-configuración-de-variables-de-entorno)
-8. [Exportación a Expo React Native (Android)](#-exportación-a-expo-react-native-android)
+2. [Conexión con Supabase y Base de Datos Realtime](#-conexión-con-supabase-y-base-de-datos-realtime)
+3. [Script SQL de Supabase (Tablas, RLS, Storage y Realtime)](#-script-sql-para-supabase)
+4. [Compilación a Aplicación Móvil Android (.APK) con Capacitor](#-compilación-a-aplicación-móvil-android-apk-con-capacitor)
+5. [Estructura del Proyecto](#-estructura-del-proyecto)
+6. [Configuración de Variables de Entorno](#-configuración-de-variables-de-entorno)
 
 ---
 
@@ -22,68 +20,36 @@ El sistema implementa un modelo **Multi-Tenant** con **Control de Acceso Basado 
 
 | Rol | Icono | Alcance y Funcionalidades |
 | :--- | :---: | :--- |
-| **Super Admin** | 👑 | Vista global SaaS. Crea y administra conjuntos residenciales, planes de suscripción (Free, Pro, Enterprise), monitorea ingresos, aprueba pagos y bloquea/desbloquea conjuntos morosos. |
-| **Administrador** | 🏢 | Administra un conjunto específico: aprueba o rechaza residentes pendientes con foto facial, crea torres/bloques, gestiona departamentos y cuotas, emite comunicados, atiende incidencias y supervisa bitácora de guardias. |
-| **Residente** | 🏠 | Genera pases de visita con códigos únicos, reserva áreas sociales (quincho, piscina, salón), reporta incidencias con fotos, comenta en avisos y recibe notificaciones de ingresos en garita. |
-| **Guardia de Garita** | 👮 | Puesto de control para validar pases por código con sonido de confirmación acústico (880 Hz), registro de entradas/salidas (Check-In / Check-Out) y acceso rápido al directorio telefónico de emergencia. |
+| **Super Admin** | 👑 | Vista global SaaS. Crea y administra conjuntos residenciales, planes de suscripción (Free, Pro, Enterprise), monitorea ingresos, aprueba pagos y bloquea/desbloquea conjuntos. |
+| **Administrador** | 🏢 | Administra un conjunto específico: aprueba o rechaza residentes pendientes con foto facial, crea torres/bloques, gestiona departamentos, emite comunicados, atiende incidencias y supervisa bitácora de guardias. |
+| **Residente** | 🏠 | Genera pases de visita con códigos únicos, reserva áreas sociales (quincho, piscina, salón), reporta incidencias con fotos, comenta en avisos y recibe alertas de ingresos en garita. |
+| **Guardia de Garita** | 👮 | Puesto de control para validar pases por código con sonido de confirmación acústico (880 Hz) y vibración háptica, registro de entradas/salidas (Check-In / Check-Out) y acceso al directorio telefónico. |
 
 ---
 
-## ⚡ Estado Actual y Conexión con Supabase
+## ⚡ Conexión con Supabase y Base de Datos Realtime
 
-La aplicación cuenta con **arquitectura dual híbrida**:
-1. **Modo Local / Demo Inmediata:** Funciona de forma autónoma con `localStorage` y datos iniciales de prueba para visualización interactiva instantánea.
-2. **Modo Supabase Realtime:** En cuanto se configuran las variables de entorno `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`, la aplicación se conecta automáticamente al cliente de Supabase, activa canales de suscripción en tiempo real (`postgres_changes`) y sincroniza los datos en la nube.
+Tanto la versión Web como la versión Móvil (Capacitor) se conectan en **tiempo real** a la misma base de datos de Supabase.
 
----
-
-## 🚀 ¿Cómo integrar tu propia Base de Datos Supabase? (Paso a Paso)
-
-Solo necesitas seguir estos **4 sencillos pasos** para dejar tu base de datos 100% operativa:
-
-### Paso 1: Crear un Proyecto en Supabase
-1. Ingresa a [supabase.com](https://supabase.com) y crea una cuenta gratuita.
-2. Haz clic en **"New Project"**.
-3. Asigna un nombre a tu proyecto (ej: `conjuntos-app-db`), define una contraseña segura para la base de datos y selecciona la región más cercana (ej: `sa-east-1` São Paulo o `us-east-1`).
-4. Espera ~1 minuto hasta que el proyecto esté aprovisionado.
-
-### Paso 2: Ejecutar el Script SQL
-1. En el panel lateral de Supabase, entra a **"SQL Editor"**.
-2. Haz clic en **"New Query"**.
-3. Pega el script SQL que se encuentra en la siguiente sección de este documento.
-4. Presiona **"Run"** (o `Ctrl + Enter`). Esto creará automáticamente todas las tablas, relaciones, políticas de seguridad (RLS), buckets de almacenamiento y publicaciones en tiempo real.
-
-### Paso 3: Configurar las Variables de Entorno
-1. En Supabase, ve a **Project Settings** ⚙️ -> **API**.
-2. Copia tu **Project URL** y tu **Project API Key (anon / public)**.
-3. En tu archivo `.env` o en la configuración de AI Studio, agrega:
-   ```env
-   VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
-   VITE_SUPABASE_ANON_KEY=tu-anon-key-aqui
-   EXPO_PUBLIC_SUPABASE_URL=https://tu-proyecto.supabase.co
-   EXPO_PUBLIC_SUPABASE_ANON_KEY=tu-anon-key-aqui
-   ```
-
-### Paso 4: Activar Realtime en Supabase
-1. Ve a **Database** -> **Replication** en el menú de Supabase.
-2. Asegúrate de que las tablas `announcements`, `announcement_comments`, `visitors`, `incidents`, `reservations` y `notifications` tengan el switch de **Realtime** activado (el script SQL del Paso 2 ya las añade a `supabase_realtime`).
+- **URL de Supabase:** `https://kptuyksmdomgqntsdzsu.supabase.co`
+- **Canales Realtime:** Suscripciones activas en `announcement_comments`, `visitors`, `incidents`, `reservations` y `announcements`.
+- **Notificaciones con Sonido y Vibración:** La aplicación reproduce un tono senoidal de 880Hz y vibración háptica al recibir alertas o validar pases de visita.
 
 ---
 
-## 🐘 Script SQL Completo para Supabase
+## 🐘 Script SQL para Supabase
 
-Copia y ejecuta este script en el **SQL Editor** de Supabase:
+Para recrear o actualizar las tablas en Supabase SQL Editor:
 
 ```sql
 -- ====================================================================
 -- MIGRACIÓN SUPABASE: CONJUNTOS APP (SISTEMA MULTI-TENANT RESIDENCIAL)
 -- ====================================================================
 
--- 1. EXTENSIONES NECESARIAS
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 2. TABLA: CONJUNTOS RESIDENCIALES (Multi-Tenant)
-CREATE TABLE public.residential_complexes (
+-- 1. CONJUNTOS RESIDENCIALES
+CREATE TABLE IF NOT EXISTS public.residential_complexes (
   id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   code VARCHAR(50) NOT NULL UNIQUE,
@@ -101,8 +67,8 @@ CREATE TABLE public.residential_complexes (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. TABLA: PERFILES DE USUARIO (Sincronizado con Supabase Auth)
-CREATE TABLE public.profiles (
+-- 2. PERFILES DE USUARIO
+CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   auth_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   name VARCHAR(255) NOT NULL,
@@ -120,8 +86,8 @@ CREATE TABLE public.profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. TABLA: TORRES Y BLOQUES
-CREATE TABLE public.apartment_blocks (
+-- 3. TORRES Y BLOQUES
+CREATE TABLE IF NOT EXISTS public.apartment_blocks (
   id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   residential_complex_id BIGINT REFERENCES public.residential_complexes(id) ON DELETE CASCADE NOT NULL,
   name VARCHAR(100) NOT NULL,
@@ -130,8 +96,8 @@ CREATE TABLE public.apartment_blocks (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. TABLA: DEPARTAMENTOS / UNIDADES
-CREATE TABLE public.apartments (
+-- 4. DEPARTAMENTOS / UNIDADES
+CREATE TABLE IF NOT EXISTS public.apartments (
   id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   residential_complex_id BIGINT REFERENCES public.residential_complexes(id) ON DELETE CASCADE NOT NULL,
   apartment_block_id BIGINT REFERENCES public.apartment_blocks(id) ON DELETE SET NULL,
@@ -143,8 +109,8 @@ CREATE TABLE public.apartments (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 6. TABLA: GUARDIAS
-CREATE TABLE public.guards (
+-- 5. GUARDIAS
+CREATE TABLE IF NOT EXISTS public.guards (
   id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
   residential_complex_id BIGINT REFERENCES public.residential_complexes(id) ON DELETE CASCADE NOT NULL,
@@ -155,8 +121,8 @@ CREATE TABLE public.guards (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 7. TABLA: VISITANTES Y PASES DE ACCESO
-CREATE TABLE public.visitors (
+-- 6. VISITANTES Y PASES DE ACCESO
+CREATE TABLE IF NOT EXISTS public.visitors (
   id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   residential_complex_id BIGINT REFERENCES public.residential_complexes(id) ON DELETE CASCADE NOT NULL,
   code VARCHAR(20) NOT NULL,
@@ -175,8 +141,8 @@ CREATE TABLE public.visitors (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 8. TABLA: COMUNICADOS
-CREATE TABLE public.announcements (
+-- 7. COMUNICADOS
+CREATE TABLE IF NOT EXISTS public.announcements (
   id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   residential_complex_id BIGINT REFERENCES public.residential_complexes(id) ON DELETE CASCADE NOT NULL,
   title VARCHAR(255) NOT NULL,
@@ -187,8 +153,8 @@ CREATE TABLE public.announcements (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 9. TABLA: COMENTARIOS EN COMUNICADOS
-CREATE TABLE public.announcement_comments (
+-- 8. COMENTARIOS EN COMUNICADOS
+CREATE TABLE IF NOT EXISTS public.announcement_comments (
   id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   announcement_id BIGINT REFERENCES public.announcements(id) ON DELETE CASCADE NOT NULL,
   residential_complex_id BIGINT REFERENCES public.residential_complexes(id) ON DELETE CASCADE NOT NULL,
@@ -198,8 +164,8 @@ CREATE TABLE public.announcement_comments (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 10. TABLA: INCIDENCIAS
-CREATE TABLE public.incidents (
+-- 9. INCIDENCIAS
+CREATE TABLE IF NOT EXISTS public.incidents (
   id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   residential_complex_id BIGINT REFERENCES public.residential_complexes(id) ON DELETE CASCADE NOT NULL,
   reported_by UUID REFERENCES public.profiles(id) NOT NULL,
@@ -212,8 +178,8 @@ CREATE TABLE public.incidents (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 11. TABLA: RESERVAS DE ÁREAS COMUNES
-CREATE TABLE public.reservations (
+-- 10. RESERVAS DE ÁREAS COMUNES
+CREATE TABLE IF NOT EXISTS public.reservations (
   id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   residential_complex_id BIGINT REFERENCES public.residential_complexes(id) ON DELETE CASCADE NOT NULL,
   user_id UUID REFERENCES public.profiles(id) NOT NULL,
@@ -226,8 +192,8 @@ CREATE TABLE public.reservations (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 12. TABLA: NOTIFICACIONES
-CREATE TABLE public.notifications (
+-- 11. NOTIFICACIONES
+CREATE TABLE IF NOT EXISTS public.notifications (
   id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
   title VARCHAR(255) NOT NULL,
@@ -238,95 +204,41 @@ CREATE TABLE public.notifications (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 13. TABLA: AUDITORÍA DEL SISTEMA
-CREATE TABLE public.audits (
-  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-  user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-  residential_complex_id BIGINT REFERENCES public.residential_complexes(id) ON DELETE SET NULL,
-  action VARCHAR(100) NOT NULL,
-  auditable_type VARCHAR(100) NOT NULL,
-  auditable_id BIGINT,
-  new_values JSONB,
-  old_values JSONB,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ====================================================================
--- HABILITAR REALTIME (POSTGRES CHANGES)
--- ====================================================================
+-- HABILITAR REALTIME
 ALTER PUBLICATION supabase_realtime ADD TABLE public.announcements;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.announcement_comments;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.visitors;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.incidents;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.reservations;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
-
--- ====================================================================
--- STORAGE BUCKETS (FOTOS FACIALES Y COMPROBANTES)
--- ====================================================================
-INSERT INTO storage.buckets (id, name, public) 
-VALUES ('face-photos', 'face-photos', true)
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO storage.buckets (id, name, public) 
-VALUES ('payment-receipts', 'payment-receipts', true)
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO storage.buckets (id, name, public) 
-VALUES ('incident-attachments', 'incident-attachments', true)
-ON CONFLICT (id) DO NOTHING;
-
--- POLÍTICAS DE SEGURIDAD (RLS BÁSICAS)
-ALTER TABLE public.residential_complexes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.visitors ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.announcement_comments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.incidents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.reservations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
-
--- Políticas públicas para lectura y escritura autenticada
-CREATE POLICY "Public Read Complex" ON public.residential_complexes FOR SELECT USING (true);
-CREATE POLICY "Public Read Profiles" ON public.profiles FOR SELECT USING (true);
-CREATE POLICY "Auth Insert Profiles" ON public.profiles FOR INSERT WITH CHECK (true);
-CREATE POLICY "Auth Update Profiles" ON public.profiles FOR UPDATE USING (true);
-CREATE POLICY "All Access Visitors" ON public.visitors FOR ALL USING (true);
-CREATE POLICY "All Access Announcements" ON public.announcements FOR ALL USING (true);
-CREATE POLICY "All Access Comments" ON public.announcement_comments FOR ALL USING (true);
-CREATE POLICY "All Access Incidents" ON public.incidents FOR ALL USING (true);
-CREATE POLICY "All Access Reservations" ON public.reservations FOR ALL USING (true);
-CREATE POLICY "All Access Notifications" ON public.notifications FOR ALL USING (true);
 ```
 
 ---
 
-## 🔔 ¿Qué falta para que esté 100% en Tiempo Real en Producción?
+## 📱 Compilación a Aplicación Móvil Android (.APK) con Capacitor
 
-Para llevar la aplicación a un despliegue de **alta concurrencia y producción móvil nativa**, aquí está la lista de verificación exacta:
+Gracias a **Capacitor 6.x**, la aplicación móvil es un **espejo 100% fiel** de la aplicación web, sin necesidad de mantener dos códigos separados.
 
-### 1. Supabase Database & Realtime (Listo en este proyecto ✅)
-- [x] Conexión cliente `@supabase/supabase-js`.
-- [x] Listeners de canales Realtime (`supabase.channel('public:...')`) suscritos a eventos `INSERT`, `UPDATE` y `DELETE` en:
-  - Comentarios de avisos (chat en vivo).
-  - Pases de visitantes (notificación instantánea a residente cuando el guardia marca "Entrada").
-  - Incidencias y reservas (cambios de estado en tiempo real).
-  - Notificaciones en campana sonora.
+### Pasos en tu computadora local:
 
-### 2. Notificaciones Push Móviles (FCM & APNs) 📱
-- **Qué se requiere:** Cuando el usuario tiene la app cerrada en su teléfono Android/iOS, Supabase Realtime no puede despertar la pantalla. Se requiere **Firebase Cloud Messaging (FCM)** o **Expo Push Service**.
-- **Cómo implementarlo:**
-  1. Configurar un Supabase Database Webhook o Edge Function que escuche eventos `INSERT` en la tabla `public.notifications` o `public.visitors`.
-  2. La función toma el `fcm_token` guardado en la tabla `profiles` del usuario destinatario.
-  3. Envía el payload HTTP a `https://exp.host/--/api/v2/push/send` o a la API de Firebase Cloud Messaging v1.
+1. **Descargar y descomprimir el proyecto.**
+2. **Abrir la terminal en la carpeta del proyecto y ejecutar:**
+   ```bash
+   # 1. Instalar dependencias
+   npm install
 
-### 3. Supabase Storage para Fotos y Comprobantes 📷
-- **Qué se requiere:** Subir las fotos faciales tomadas desde la cámara móvil y los PDFs de comprobantes de pago directamente a buckets de Supabase en lugar de Base64 en memoria.
-- **Buckets configurados en el SQL:** `face-photos`, `payment-receipts`, `incident-attachments`.
+   # 2. Compilar el frontend web para producción
+   npm run build
 
-### 4. Supabase Edge Functions (Opcional para Automatizaciones) ⚡
-- **Recordatorios de Pago SaaS:** Una función programada con Supabase Cron (`pg_cron`) para marcar como vencidos o en morosidad los conjuntos cuyo `current_period_end` haya expirado.
-- **Limpieza de Pases Expirados:** Desactivar automáticamente pases de visita con más de 24 horas de antigüedad.
+   # 3. Agregar la plataforma Android
+   npx cap add android
+
+   # 4. Abrir en Android Studio
+   npx cap open android
+   ```
+3. **Generar el APK en Android Studio:**
+   - En el menú superior de Android Studio: **Build** &rarr; **Build Bundle(s) / APK(s)** &rarr; **Build APK(s)**.
+   - O conecta tu teléfono por USB con *Depuración USB* activada y presiona el botón **Run (▶)**.
 
 ---
 
@@ -334,60 +246,24 @@ Para llevar la aplicación a un despliegue de **alta concurrencia y producción 
 
 ```
 /
-├── README.md                              # Documentación técnica completa
+├── capacitor.config.ts                    # Configuración nativa de Capacitor (Android / iOS)
+├── README.md                              # Guía y documentación técnica
 ├── src/
 │   ├── components/
-│   │   ├── layout/                        # Layouts: AppLayout (Desktop/Android frame), GuestLayout
-│   │   ├── ui/                            # Botones, Cards, Modales, Badges, Campana de Notificaciones
+│   │   ├── layout/                        # AppLayout y GuestLayout (Clean UI sin elementos de prueba)
+│   │   ├── ui/                            # Botones, Modales, Badges, Campana sonora
 │   │   └── views/
 │   │       ├── super/                     # Vistas Super Admin (SaaS, Planes, Conjuntos)
 │   │       ├── admin/                     # Vistas Administrador (Torres, Deptos, Residentes, Incidencias, Avisos)
-│   │       ├── resident/                  # Vistas Residente (Generar Pase QR, Reservas, Incidencias)
-│   │       ├── guard/                     # Vistas Guardia (Validador Acústico 880Hz, Directorio)
-│   │       └── developer/                 # Vistas Desarrollador (Guía Supabase Realtime & Código Expo)
+│   │       ├── resident/                  # Vistas Residente (Pase QR, Reservas, Incidencias)
+│   │       ├── guard/                     # Vistas Guardia (Validador 880Hz, Directorio)
+│   │       └── developer/                 # Guía de compilación Capacitor APK
 │   ├── context/
-│   │   ├── AuthContext.tsx                # Contexto de autenticación, roles y sesión
-│   │   └── DataContext.tsx                # Store central reactivo + Listeners Supabase Realtime
+│   │   ├── AuthContext.tsx                # Autenticación y roles
+│   │   └── DataContext.tsx                # Sincronización Supabase Realtime
 │   ├── lib/
-│   │   ├── supabase.ts                    # Cliente Supabase, verificación de conexión y Realtime
-│   │   ├── sound.ts                       # Generador acústico de 880 Hz para garita (Web Audio)
-│   │   ├── pdf.ts                         # Generador de recibos de pago PDF (jsPDF)
-│   │   └── initialData.ts                 # Datos iniciales para modo preview
-│   ├── types.ts                           # Tipos e interfaces TypeScript del sistema
-│   └── App.tsx                            # Router principal de vistas y gestión de estado
+│   │   ├── supabase.ts                    # Conexión Supabase
+│   │   ├── sound.ts                       # Sintetizador Web Audio 880Hz + vibración
+│   │   └── pdf.ts                         # Generador de recibos PDF
+│   └── App.tsx                            # Router principal
 ```
-
----
-
-## 🔧 Configuración de Variables de Entorno
-
-Crea un archivo `.env` en la raíz del proyecto:
-
-```env
-# Variables para la Web App (Vite)
-VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
-VITE_SUPABASE_ANON_KEY=tu-anon-key-aqui
-
-# Variables para la App Móvil (Expo React Native)
-EXPO_PUBLIC_SUPABASE_URL=https://tu-proyecto.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=tu-anon-key-aqui
-
-# Notificaciones Push (Opcional para Expo/FCM)
-EXPO_PUBLIC_FIREBASE_API_KEY=
-EXPO_PUBLIC_FIREBASE_PROJECT_ID=
-```
-
----
-
-## 📲 Exportación a Expo React Native (Android - SDK 54 & Cliente v54.0.8)
-
-Para compilar la aplicación móvil nativa con **Expo SDK 54 (Expo Go Cliente v54.0.8)** y **NativeWind**:
-1. Abre la vista **"Código Expo React Native"** o **"Guía Supabase & README"** en el menú de la aplicación.
-2. Copia los archivos preconfigurados (`app.json`, `package.json`, `app/_layout.tsx`, `lib/supabase.ts`, etc.).
-3. Ejecuta en tu terminal local:
-   ```bash
-   npx create-expo-app@latest conjuntos-mobile --template blank-typescript
-   cd conjuntos-mobile
-   npm install expo@~54.0.8 @supabase/supabase-js expo-secure-store expo-notifications expo-image-picker nativewind
-   npx expo start
-   ```

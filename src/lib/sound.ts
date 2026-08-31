@@ -20,10 +20,15 @@ class SoundEngine {
   }
 
   /**
-   * Plays a distinct 880Hz beep tone for 0.4s
+   * Plays a distinct 880Hz beep tone for 0.4s and triggers haptic vibration
    */
   playNotificationBeep(frequency = 880, duration = 0.4) {
     try {
+      // Trigger native vibration if supported
+      if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate([100, 50, 100]);
+      }
+
       const ctx = this.getContext();
       if (!ctx) return;
 

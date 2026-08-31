@@ -3,6 +3,7 @@ import { Bell, CheckCheck, Trash2, Clock } from 'lucide-react';
 import { NotificationItem } from '../../types';
 import { soundEngine } from '../../lib/sound';
 import { formatDate } from '../../lib/utils';
+import { capNotificationService } from '../../lib/capacitorNotifications';
 
 export interface NotificationBellProps {
   notifications: NotificationItem[];
@@ -100,6 +101,26 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
           {/* List */}
           <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+            {/* Background notification testing trigger */}
+            <div className="p-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-2">
+              <span className="text-[11px] text-slate-600 font-medium">Alertas en 2do Plano / Garita</span>
+              <button
+                onClick={async () => {
+                  const granted = await capNotificationService.requestPermissions();
+                  if (granted) {
+                    await capNotificationService.sendNotification({
+                      title: '🔔 Alerta de Garita (Segundo Plano)',
+                      body: 'Capacitor: Las notificaciones y vibración en segundo plano están activas.',
+                      soundType: 'success',
+                    });
+                  }
+                }}
+                className="text-[10px] font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+              >
+                Probar / Activar
+              </button>
+            </div>
+
             {notifications.length === 0 ? (
               <div className="py-8 text-center px-4">
                 <Bell className="h-8 w-8 text-slate-300 mx-auto mb-2" />

@@ -56,8 +56,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setCurrentComplex(complex);
         }
       } else {
-        // Default to Admin demo for immediate rich preview
-        const defaultAdmin = INITIAL_USERS.find((u) => u.email === 'admin@LP.app') || INITIAL_USERS[1];
+        // Default to Admin
+        const defaultAdmin = INITIAL_USERS.find((u) => u.email.toLowerCase() === 'admin@lp.app') || INITIAL_USERS[1];
         setCurrentUser(defaultAdmin);
         setCurrentComplex(INITIAL_COMPLEXES[0]);
       }
