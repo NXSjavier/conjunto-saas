@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+:root {
+  color: #0f172a;
+  background: #f0fdf4;
+  font-family: Inter, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  min-height: 100%;
+  min-width: 100%;
+}
+
+body {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 45%, #ecfdf5 100%);
+  color: #0f172a;
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+

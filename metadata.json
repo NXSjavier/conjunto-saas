@@ -1,0 +1,6 @@
+{
+  "name": "Conjuntos App",
+  "description": "Sistema integral de gestión residencial multi-tenant con SQLite, WebSockets en tiempo real y roles (Super Admin, Administrador, Residente, Guarda de seguridad).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
