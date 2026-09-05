@@ -265,7 +265,7 @@ export const GuardDashboard = ({ onNavigate }) => {
       />
 
       {/* 📊 Panel de Estadísticas */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="p-4 bg-emerald-500/5 border-emerald-500/20">
           <div className="flex items-center justify-between">
             <div>

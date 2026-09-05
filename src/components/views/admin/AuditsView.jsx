@@ -37,7 +37,7 @@ export const AuditsView = () => {
       ) : (
         <Card>
           <div className="overflow-x-auto -mx-5">
-            <table className="w-full text-xs">
+            <table className="w-full min-w-[560px] text-xs">
               <thead>
                 <tr className="border-b border-slate-800/80">
                   <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider">Usuario</th>

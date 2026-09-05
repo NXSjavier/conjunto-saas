@@ -110,7 +110,7 @@ export const SubscriptionsView = () => {
         subtitle="Control de vigencia, cobros y extensiones de 30 días con generación automática de recibo PDF."
       >
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="bg-slate-950/60 text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800">
               <tr>
                 <th className="px-4 py-3">Conjunto</th>

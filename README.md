@@ -1,6 +1,6 @@
 # Conjuntos App
 
-Sistema SaaS para administrar conjuntos residenciales desde web y Android. Usa Supabase como fuente de datos y autenticacion, React/Vite para la interfaz, Express para operaciones de negocio protegidas y Capacitor para la APK.
+Sistema SaaS para administrar conjuntos residenciales desde web y Android. Usa Supabase como fuente de datos y autenticacion, React/Vite para la interfaz, Firebase Cloud Messaging para notificaciones push y Capacitor para la APK.
 
 ## Estado del proyecto
 
@@ -9,6 +9,8 @@ Sistema SaaS para administrar conjuntos residenciales desde web y Android. Usa S
 - Android: compila con Java 21 y genera `android/app/build/outputs/apk/debug/app-debug.apk`.
 - Base de datos: Supabase PostgreSQL.
 - Realtime: Supabase Realtime en web y movil; WebSocket Express queda como respaldo web.
+- Push: Firebase Cloud Messaging via Edge Function `send-push` + tabla `push_tokens` (multi-dispositivo).
+- Responsive: layout movil (sidebar drawer, bottom nav, tablas con scroll horizontal, grids colapsables).
 - Seguridad: aplicar `supabase-auth-secure-migration.sql` antes de usar datos reales.
 - No usar `supabase-standalone-fix.sql`: sus politicas abiertas permiten que cualquier cliente anonimo modifique la base.
 
@@ -41,6 +43,11 @@ VITE_SUPABASE_ANON_KEY=clave-publica-anon
 VITE_API_BASE_URL=https://tu-backend-publico.com
 VITE_WS_BASE_URL=wss://tu-backend-publico.com
 CAPACITOR_API_URL=https://tu-backend-publico.com
+VITE_FIREBASE_API_KEY=clave-web-de-firebase
+VITE_FIREBASE_PROJECT_ID=tu-project-id
+VITE_FIREBASE_MESSAGING_SENDER_ID=tu-sender-id
+VITE_FIREBASE_APP_ID=tu-app-id
+VITE_FIREBASE_VAPID_KEY=tu-vapid-key
 ```
 
 Desarrollo web:
@@ -84,7 +91,49 @@ La clave `anon` puede estar en el frontend. La clave `service_role` solo debe ex
 - `resident`: consulta su apartamento, solicita reservas, crea pases y reporta incidencias.
 - `guard`: valida visitantes y gestiona el control de acceso.
 
-Tablas principales: `residential_complexes`, `profiles`, `apartments`, `visitors`, `announcements`, `announcement_comments`, `incidents`, `reservations`, `notifications` y `audit_logs`.
+Tablas principales: `residential_complexes`, `profiles`, `apartments`, `visitors`, `announcements`, `announcement_comments`, `incidents`, `reservations`, `notifications`, `push_tokens` y `audit_logs`.
+
+## Notificaciones push (FCM)
+
+Flujo: evento Realtime en `DataContext.jsx` → `sendPushToMany`/`sendPushToUser` (`src/lib/pushNotifications.ts`) → Edge Function `send-push` → FCM HTTP v1 API → celular del usuario (incluso con la app cerrada, via `public/firebase-messaging-sw.js`).
+
+Migracion requerida (una vez por proyecto): ejecutar `supabase-push-tokens.sql` en el SQL Editor. Crea la tabla `push_tokens` con RLS (lectura autenticada, escritura solo del propio `auth.uid()`).
+
+Variables necesarias:
+
+- En Vercel (frontend): `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`, `VITE_FIREBASE_VAPID_KEY`.
+- En Supabase Edge Function `send-push` (secrets): `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (service account JSON de Firebase Console → Project Settings → Service accounts).
+- En Firebase Console → Project Settings → Cloud Messaging: habilitar **Firebase Cloud Messaging API (V1)**.
+
+En el movil, `Notification.requestPermission()` solo funciona con un toque del usuario. Por eso la app NO pide permiso automaticamente al login: muestra un banner verde con boton **Activar** (y un boton **Activar Notificaciones** en el sidebar). Cuando el permiso ya esta otorgado aparece **Notificaciones activas · Probar** para enviar una push de prueba real al dispositivo.
+
+### Error conocido (corregido): las push solo llegaban a la PC
+
+Causa: `profiles.fcm_token` guardaba UN solo token por usuario. Cada login en la PC sobrescribia el token del celular, y el celular dejaba de recibir.
+
+Solucion aplicada:
+
+1. Tabla `push_tokens`: un registro por dispositivo (`auth_user_id`, `token` unico, `device_label`).
+2. Los envios consultan `push_tokens` (+ `profiles.fcm_token` como fallback) y mandan a TODOS los dispositivos.
+3. El banner ahora depende del estado de ESTE dispositivo (`localStorage`), no del permiso global: si el permiso ya estaba otorgado pero el dispositivo no tiene token, se registra en silencio al abrir la app.
+
+Si un celular no recibe push, verificar en este orden:
+
+1. El banner verde aparece → tocar **Activar** y aceptar el permiso.
+2. Si aparece el banner amarillo (bloqueadas): en Chrome tocar el candado junto a la direccion → Permisos → Notificaciones → Permitir.
+3. Tocar **Probar** en el sidebar: debe llegar una push de prueba.
+4. Confirmar en Supabase que `push_tokens` tiene una fila con el token de ese dispositivo.
+5. Si la pagina muestra version vieja: cerrar todas las pestanas del sitio y reabrir (el service worker cachea el shell).
+
+## Responsive movil
+
+Patrones aplicados en las vistas `.jsx` (las que se despliegan; `index.html` carga `main.jsx`):
+
+- Sidebar como drawer lateral + bottom nav en `< lg`; sidebar fijo en desktop.
+- Grids colapsables (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-4`); el calendario de reservas usa siempre 7 columnas.
+- Tablas de datos con `overflow-x-auto` + `min-w-[...]` para scroll horizontal en vez de aplastar columnas.
+- Barra superior movil: el titulo se oculta bajo 420px para no desbordar en pantallas de 320px.
+- Modales con `p-4`, `w-full` y `overflow-y-auto`.
 
 ## Android
 
@@ -145,6 +194,8 @@ El proyecto Vercel queda enlazado localmente mediante `.vercel`, que esta exclui
 - Un cambio de reserva, anuncio o visitante aparece en web y Android mediante Realtime.
 - Un usuario anonimo no puede leer perfiles, reservas, incidencias o notificaciones.
 - No hay `service_role` dentro de `dist`, `android` ni archivos de frontend.
+- Push: tocar **Probar** en el sidebar llega al dispositivo; crear un comunicado desde otro dispositivo llega con el titulo real.
+- Responsive: en 360px no hay scroll horizontal de pagina (las tablas scrollean dentro de su contenedor).
 
 ## Diagnostico
 
@@ -193,12 +244,20 @@ Antes de cambiar codigo, la IA debe:
 - `src/lib/supabaseRepo.js`: autenticacion y lecturas directas de Supabase.
 - `src/context/AuthContext.jsx`: sesion y perfil actual.
 - `src/context/DataContext.jsx`: estado, CRUD y sincronizacion Realtime.
+- `src/lib/firebase.ts`: cliente FCM (permiso, token, listener foreground).
+- `src/lib/pushNotifications.ts`: registro multi-dispositivo y envio via Edge Function.
+- `public/firebase-messaging-sw.js`: service worker para push en background.
+- `supabase/functions/send-push/index.ts`: Edge Function que envia via FCM HTTP v1 API.
+- `supabase-push-tokens.sql`: migracion de tabla `push_tokens` + RLS.
 - `supabase-migration.sql`: esquema inicial.
 - `supabase-auth-secure-migration.sql`: migracion segura de Auth y RLS.
+- `supabase-auth-trigger-fix.sql`: diagnostico y reparacion del error de triggers en `auth.users`.
 - `capacitor.config.ts`: configuracion de Android.
 
 ## Seguridad
 
 Las claves enviadas por chat, commits o archivos publicos deben revocarse. Una clave `service_role` permite acceso administrativo completo a la base. Para usuarios finales se usa exclusivamente la `anon key` junto con Supabase Auth y RLS.
+
+Si crear un administrador o guarda devuelve `Database error creating new user`, ejecuta `supabase-auth-trigger-fix.sql` en Supabase SQL Editor. La aplicacion crea el perfil despues de crear el usuario Auth, por lo que un trigger adicional que inserte perfiles puede fallar por columnas obligatorias o duplicar registros.
 
 Proyecto privado para uso interno.

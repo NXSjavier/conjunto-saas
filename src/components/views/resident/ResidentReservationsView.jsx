@@ -206,13 +206,13 @@ export const ResidentReservationsView = () => {
 
           <div className="space-y-3">
             <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Calendario</label>
-            <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
+            <div className="grid grid-cols-7 gap-1 sm:gap-2">
               {calendarDays.map((day) => (
                 <button
                   type="button"
                   key={day.value}
                   onClick={() => setResDate(day.value)}
-                  className={`rounded-xl border px-2 py-2 text-xs transition ${
+                  className={`rounded-xl border px-1 sm:px-2 py-2 text-[10px] sm:text-xs transition ${
                     resDate === day.value
                       ? 'border-cyan-400 bg-cyan-500/10 text-cyan-200'
                       : 'border-slate-700 bg-slate-900/60 text-slate-300 hover:border-slate-500'

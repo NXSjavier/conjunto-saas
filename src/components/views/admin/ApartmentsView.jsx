@@ -127,7 +127,7 @@ export const ApartmentsView = () => {
       ) : (
         <div className="rounded-2xl bg-slate-900/70 border border-slate-800 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[680px] text-left text-sm">
               <thead className="bg-slate-950/80 text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800">
                 <tr>
                   <th className="px-5 py-3.5">Número</th>
