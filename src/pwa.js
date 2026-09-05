@@ -17,7 +17,7 @@ export function registerPwa() {
   clearObsoleteAppData();
 
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/firebase-messaging-sw.js', { updateViaCache: 'none' })
       .then((registration) => registration.update())
       .catch((error) => console.warn('Service worker registration failed:', error));
   });

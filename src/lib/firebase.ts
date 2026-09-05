@@ -83,8 +83,9 @@ export async function getExistingToken(): Promise<string | null> {
       reg = (await navigator.serviceWorker.getRegistration('/')) || undefined;
       if (!reg) {
         reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
-        await navigator.serviceWorker.ready;
       }
+      await navigator.serviceWorker.ready;
+      reg = (await navigator.serviceWorker.getRegistration('/')) || reg;
     } catch {
       reg = undefined;
     }
