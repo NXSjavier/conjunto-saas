@@ -38,8 +38,8 @@ const GUIDES: RoleGuide[] = [
       {
         title: 'Panel Principal',
         steps: [
-          { title: 'Dashboard', description: 'Visualiza métricas en tiempo real: residentes activos, visitas del día, incidencias pendientes y reservas.', icon: <BarChart3 className="w-5 h-5" />, color: 'emerald', tip: 'Los datos se actualizan automáticamente vía Supabase Realtime.' },
-          { title: 'Aprobar Residentes', description: 'Revisa solicitudes de registro. Verifica la foto, nombre y departamento. Aprueba o rechaza con un toque.', icon: <UserCheck className="w-5 h-5" />, color: 'emerald', tip: 'El residente recibe una notificación al ser aprobado.' },
+          { title: 'Dashboard', description: 'Visualiza métricas en tiempo real: residentes activos, visitas del día, incidencias pendientes y reservas.', icon: <BarChart3 className="w-5 h-5" />, color: 'emerald', tip: 'Los datos se actualizan automáticamente vía Supabase Realtime.', mockup: { type: 'dashboard', label: 'Dashboard Admin', items: ['Residentes: 45', 'Visitas hoy: 12', 'Incidencias: 3', 'Reservas: 8'] } },
+          { title: 'Aprobar Residentes', description: 'Revisa solicitudes de registro. Verifica la foto, nombre y departamento. Aprueba o rechaza con un toque.', icon: <UserCheck className="w-5 h-5" />, color: 'emerald', tip: 'El residente recibe una notificación al ser aprobado.', mockup: { type: 'list', label: 'Pendientes', items: ['Juan Perez - Apt 301', 'Maria Lopez - Apt 204', 'Carlos Ruiz - Apt 102'] } },
           { title: 'Torres y Bloques', description: 'Organiza tu conjunto en torres/bloques. Crea, edita o elimina estructuras.', icon: <Building className="w-5 h-5" />, color: 'emerald' },
         ],
       },
@@ -79,7 +79,7 @@ const GUIDES: RoleGuide[] = [
       {
         title: 'Registro y Acceso',
         steps: [
-          { title: 'Registrarse', description: 'Ingresa tu datos: nombre, email, contraseña. Selecciona tu conjunto con el código que te dio el admin.', icon: <Zap className="w-5 h-5" />, color: 'sky', tip: 'Toma una foto de rostro para verificación de seguridad.' },
+          { title: 'Registrarse', description: 'Ingresa tus datos: nombre, email, contraseña. Selecciona tu conjunto con el código que te dio el admin.', icon: <Zap className="w-5 h-5" />, color: 'sky', tip: 'Toma una foto de rostro para verificación de seguridad.', mockup: { type: 'form', label: 'Registro', items: ['Nombre completo', 'Email y contraseña', 'Foto de rostro', 'Codigo del conjunto'] } },
           { title: 'Esperar Aprobación', description: 'El administrador revisa tu solicitud. Recibirás una notificación cuando sea aprobada.', icon: <Lock className="w-5 h-5" />, color: 'sky' },
           { title: 'Iniciar Sesión', description: 'Usa tu email y contraseña. Si olvidaste tu contraseña, usa la opción de recuperación.', icon: <Key className="w-5 h-5" />, color: 'sky' },
         ],
@@ -113,13 +113,13 @@ const GUIDES: RoleGuide[] = [
         title: 'Primer Acceso',
         steps: [
           { title: 'Credenciales', description: 'El admin te proporciona email y contraseña temporal. Úsalos para tu primer ingreso.', icon: <Key className="w-5 h-5" />, color: 'amber', tip: 'Cambia tu contraseña después del primer login.' },
-          { title: 'Panel de Garita', description: 'Tu pantalla principal muestra visitas pendientes del día y estadísticas rápidas.', icon: <LayoutDashboard className="w-5 h-5" />, color: 'amber' },
+          { title: 'Panel de Garita', description: 'Tu pantalla principal muestra visitas pendientes del día y estadísticas rápidas.', icon: <LayoutDashboard className="w-5 h-5" />, color: 'amber', mockup: { type: 'dashboard', label: 'Panel Garita', items: ['Visitas hoy: 8', 'Pendientes: 3', 'Completadas: 5', 'Hora: 08:30 PM'] } },
         ],
       },
       {
         title: 'Control de Acceso',
         steps: [
-          { title: 'Validar Código', description: 'Pide al visitante su código QR. Escanéalo o ingrésalo manualmente para validar.', icon: <QrCode className="w-5 h-5" />, color: 'amber', tip: 'Si el código es inválido, la app te lo indica inmediatamente.' },
+          { title: 'Validar Código', description: 'Pide al visitante su código QR. Escanéalo o ingrésalo manualmente para validar.', icon: <QrCode className="w-5 h-5" />, color: 'amber', tip: 'Si el código es inválido, la app te lo indica inmediatamente.', mockup: { type: 'validator', label: 'Validar Visita', items: ['Escanear QR', 'Ingreso manual', 'Estado: VALIDO', 'Visitante: Ana Garcia'] } },
           { title: 'Registrar Entrada', description: 'Al validar, registra la hora de entrada. El residente recibe notificación.', icon: <CheckCircle2 className="w-5 h-5" />, color: 'amber' },
           { title: 'Registrar Salida', description: 'Cuando el visitante se va, registra la salida. Se actualiza el historial.', icon: <ArrowRight className="w-5 h-5" />, color: 'amber' },
         ],
