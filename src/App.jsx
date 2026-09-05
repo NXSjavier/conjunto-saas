@@ -55,6 +55,7 @@ const ROLE_VIEWS = {
     'super_admins',
     'super_users',
     'super_subscriptions',
+    'app_guide',
   ],
   admin: [
     'admin_dashboard',
@@ -68,6 +69,7 @@ const ROLE_VIEWS = {
     'admin_guards',
     'admin_audits',
     'admin_reports',
+    'app_guide',
   ],
   resident: [
     'resident_dashboard',
@@ -76,11 +78,13 @@ const ROLE_VIEWS = {
     'resident_visitors',
     'resident_reservations',
     'resident_incidents',
+    'app_guide',
   ],
   guard: [
     'guard_dashboard',
     'guard_validator',
     'guard_directory',
+    'app_guide',
   ],
 };
 
