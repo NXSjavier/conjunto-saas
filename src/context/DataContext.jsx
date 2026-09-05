@@ -7,6 +7,7 @@ import { generateUserDeletionCertificatePDF, generateSubscriptionReceiptPDF } fr
 import { getApiBaseUrl, isStandalone } from '../lib/config';
 import { supabase } from '../lib/supabaseClient';
 import { fetchBootstrapDirect, fetchBootstrapHeavy, fetchComplexesDirect } from '../lib/supabaseRepo';
+import { sendPushToUser, sendPushToMany } from '../lib/pushNotifications';
 
 const DataContext = createContext(undefined);
 const apiBase = getApiBaseUrl();
@@ -127,12 +128,41 @@ export const DataProvider = ({ children }) => {
     const connect = () => {
       channel = supabase.channel('conjuntos-v3')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'visitors' }, (payload) => {
-          if (payload.eventType === 'INSERT') { setVisitors((p) => [payload.new, ...p.filter((v) => v.id !== payload.new.id)]); playNotificationBeep(); }
-          if (payload.eventType === 'UPDATE') { setVisitors((p) => p.map((v) => v.id === payload.new.id ? payload.new : v)); playNotificationBeep(); }
+          if (payload.eventType === 'INSERT') {
+            setVisitors((p) => [payload.new, ...p.filter((v) => v.id !== payload.new.id)]);
+            playNotificationBeep();
+            sendPushToMany(
+              (users || []).filter((u) => u.role === 'admin' && u.complex_id === payload.new.complex_id).map((u) => u.id),
+              'Nuevo Pase de Visita',
+              `${payload.new.visitor_name} — Apt ${payload.new.destination_apartment || '?'}`,
+              '/'
+            ).catch(() => {});
+          }
+          if (payload.eventType === 'UPDATE') {
+            setVisitors((p) => p.map((v) => v.id === payload.new.id ? payload.new : v));
+            playNotificationBeep();
+            if (payload.new.resident_id && (payload.new.status === 'in' || payload.new.status === 'out')) {
+              sendPushToUser(
+                payload.new.resident_id,
+                payload.new.status === 'in' ? 'Visitante Ingresó' : 'Visitante Salió',
+                `${payload.new.visitor_name} (${payload.new.code}) → ${payload.new.status.toUpperCase()}`,
+                '/'
+              ).catch(() => {});
+            }
+          }
           if (payload.eventType === 'DELETE') setVisitors((p) => p.filter((v) => v.id !== payload.old.id));
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, (payload) => {
-          if (payload.eventType === 'INSERT') { setAnnouncements((p) => [payload.new, ...p.filter((a) => a.id !== payload.new.id)]); playNotificationBeep(); }
+          if (payload.eventType === 'INSERT') {
+            setAnnouncements((p) => [payload.new, ...p.filter((a) => a.id !== payload.new.id)]);
+            playNotificationBeep();
+            sendPushToMany(
+              (users || []).filter((u) => u.complex_id === payload.new.complex_id && u.id !== currentUser?.id).map((u) => u.id),
+              'Nuevo Comunicado',
+              payload.new.title,
+              '/'
+            ).catch(() => {});
+          }
           if (payload.eventType === 'UPDATE') setAnnouncements((p) => p.map((a) => a.id === payload.new.id ? payload.new : a));
           if (payload.eventType === 'DELETE') setAnnouncements((p) => p.filter((a) => a.id !== payload.old.id));
         })
@@ -141,12 +171,30 @@ export const DataProvider = ({ children }) => {
           if (payload.eventType === 'DELETE') setComments((p) => p.filter((c) => c.id !== payload.old.id));
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, (payload) => {
-          if (payload.eventType === 'INSERT') { setIncidents((p) => [payload.new, ...p.filter((i) => i.id !== payload.new.id)]); playNotificationBeep(); }
+          if (payload.eventType === 'INSERT') {
+            setIncidents((p) => [payload.new, ...p.filter((i) => i.id !== payload.new.id)]);
+            playNotificationBeep();
+            sendPushToMany(
+              (users || []).filter((u) => u.role === 'admin' && u.complex_id === payload.new.complex_id).map((u) => u.id),
+              'Nueva Incidencia Reportada',
+              `${payload.new.title} — ${payload.new.priority || 'Normal'}`,
+              '/'
+            ).catch(() => {});
+          }
           if (payload.eventType === 'UPDATE') setIncidents((p) => p.map((i) => i.id === payload.new.id ? payload.new : i));
           if (payload.eventType === 'DELETE') setIncidents((p) => p.filter((i) => i.id !== payload.old.id));
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, (payload) => {
-          if (payload.eventType === 'INSERT') { setReservations((p) => [payload.new, ...p.filter((r) => r.id !== payload.new.id)]); playNotificationBeep(); }
+          if (payload.eventType === 'INSERT') {
+            setReservations((p) => [payload.new, ...p.filter((r) => r.id !== payload.new.id)]);
+            playNotificationBeep();
+            sendPushToMany(
+              (users || []).filter((u) => u.role === 'admin' && u.complex_id === payload.new.complex_id).map((u) => u.id),
+              'Nueva Solicitud de Reserva',
+              `${payload.new.area_name} — ${payload.new.reservation_date || ''}`,
+              '/'
+            ).catch(() => {});
+          }
           if (payload.eventType === 'UPDATE') setReservations((p) => p.map((r) => r.id === payload.new.id ? payload.new : r));
           if (payload.eventType === 'DELETE') setReservations((p) => p.filter((r) => r.id !== payload.old.id));
         })

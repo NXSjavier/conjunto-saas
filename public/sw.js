@@ -1,21 +1,5 @@
-const CACHE_NAME = 'conjuntos-app-v2';
+const CACHE_NAME = 'conjuntos-app-v3';
 const APP_SHELL = ['/'];
-
-self.addEventListener('push', (event) => {
-  let data = {};
-  try { data = event.data ? event.data.json() : {}; } catch {}
-  event.waitUntil(self.registration.showNotification(data.title || 'Conjuntos App', {
-    body: data.body || 'Tienes una actualización nueva.',
-    icon: data.icon || '/icons/icon-192.svg',
-    badge: data.badge || '/icons/icon-192.svg',
-    data: { url: data.url || '/' },
-  }));
-});
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  event.waitUntil(clients.openWindow(event.notification.data?.url || '/'));
-});
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));

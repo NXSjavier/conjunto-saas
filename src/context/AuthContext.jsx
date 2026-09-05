@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { getApiBaseUrl, isStandalone } from '../lib/config';
 import { supabase } from '../lib/supabaseClient';
 import { loginDirect, registerWithCodeDirect, registerWithoutCodeDirect, resetPasswordDirect } from '../lib/supabaseRepo';
+import { initPushNotifications, cleanupPushNotifications } from '../lib/pushNotifications';
 
 const AuthContext = createContext(undefined);
 const SESSION_KEY = 'conjuntos_session';
@@ -65,6 +66,10 @@ export const AuthProvider = ({ children }) => {
     setCurrentUser(user);
     setCurrentComplex(complex);
     localStorage.setItem(SESSION_KEY, JSON.stringify({ user, complex }));
+    // Init push notifications after login
+    if (user?.auth_user_id) {
+      initPushNotifications(user.auth_user_id).catch(() => {});
+    }
   };
 
   const login = async (email, pass) => {
@@ -199,6 +204,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
+      cleanupPushNotifications();
       await supabase.auth.signOut();
       localStorage.removeItem(SESSION_KEY);
       setCurrentUser(null);
