@@ -75,10 +75,22 @@ export async function requestPushPermission(): Promise<string | null> {
 export async function getExistingToken(): Promise<string | null> {
   try {
     if (!('Notification' in window) || Notification.permission !== 'granted') return null;
+    if (!('serviceWorker' in navigator)) return null;
     const fcm = getFirebaseMessaging();
     if (!fcm) return null;
+    let reg: ServiceWorkerRegistration | undefined;
+    try {
+      reg = (await navigator.serviceWorker.getRegistration('/')) || undefined;
+      if (!reg) {
+        reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
+        await navigator.serviceWorker.ready;
+      }
+    } catch {
+      reg = undefined;
+    }
     const token = await getToken(fcm, {
       vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY || undefined,
+      serviceWorkerRegistration: reg,
     });
     return token || null;
   } catch {

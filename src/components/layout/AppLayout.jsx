@@ -3,8 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { NotificationBell } from '../ui/NotificationBell';
 import { cn, daysUntilExpiry } from '../../lib/utils';
-import { isPushSupported, isPushGranted } from '../../lib/firebase';
-import { enablePushFromGesture } from '../../lib/pushNotifications';
+import { enablePushFromGesture, getPushStatus, initPushNotifications, sendPushToUser } from '../../lib/pushNotifications';
 import {
   Building2,
   LayoutDashboard,
@@ -106,8 +105,40 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
   const { currentUser, currentComplex } = useAuth();
   const { users, notifications, markAllNotificationsAsRead, clearNotifications } = useData();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [pushEnabled, setPushEnabled] = useState(isPushGranted());
+  const [pushStatus, setPushStatus] = useState('checking');
   const [pushLoading, setPushLoading] = useState(false);
+  const [pushTesting, setPushTesting] = useState(false);
+
+  // Estado de push para ESTE dispositivo. Si el permiso ya está otorgado pero
+  // este dispositivo aún no tiene token, se registra en silencio.
+  useEffect(() => {
+    const authId = currentUser?.auth_user_id;
+    const check = async () => {
+      let s = getPushStatus(authId);
+      if (s === 'ready' && authId) {
+        const ok = await initPushNotifications(authId).catch(() => false);
+        if (ok) s = getPushStatus(authId);
+      }
+      setPushStatus(s);
+    };
+    check();
+  }, [currentUser?.auth_user_id]);
+
+  const handleEnablePush = async () => {
+    if (!currentUser?.auth_user_id) return;
+    setPushLoading(true);
+    const ok = await enablePushFromGesture(currentUser.auth_user_id).catch(() => false);
+    setPushStatus(getPushStatus(currentUser.auth_user_id));
+    setPushLoading(false);
+    return ok;
+  };
+
+  const handleTestPush = async () => {
+    if (!currentUser?.id) return;
+    setPushTesting(true);
+    await sendPushToUser(currentUser.id, 'Prueba de notificación', 'Si ves esto, las push funcionan en este dispositivo.');
+    setPushTesting(false);
+  };
 
   const role = currentUser?.role || 'resident';
   const navItems = NAV_ITEMS[role] || [];
@@ -218,19 +249,29 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
       </nav>
 
       <div className="p-3 border-t border-slate-800 space-y-2">
-        {isPushSupported() && !pushEnabled && (
+        {pushStatus === 'needs-enable' && (
           <button
             disabled={pushLoading}
-            onClick={async () => {
-              setPushLoading(true);
-              const ok = await enablePushFromGesture(currentUser.auth_user_id);
-              if (ok) setPushEnabled(true);
-              setPushLoading(false);
-            }}
+            onClick={handleEnablePush}
             className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-all cursor-pointer shadow-sm"
           >
             <Bell className="w-4 h-4" />
             <span>{pushLoading ? 'Activando...' : 'Activar Notificaciones'}</span>
+          </button>
+        )}
+        {pushStatus === 'denied' && (
+          <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+            Notificaciones bloqueadas. Actívalas en los ajustes del navegador para este sitio.
+          </p>
+        )}
+        {pushStatus === 'ready' && (
+          <button
+            disabled={pushTesting}
+            onClick={handleTestPush}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-emerald-700 bg-emerald-50/60 border border-emerald-200 hover:bg-emerald-100 transition-all cursor-pointer"
+          >
+            <Bell className="w-3.5 h-3.5" />
+            <span>{pushTesting ? 'Enviando prueba...' : 'Notificaciones activas · Probar'}</span>
           </button>
         )}
         <button
@@ -358,7 +399,7 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
       {/* Main content */}
       <main className="lg:pl-64 pt-14 pb-20 lg:pt-20 lg:pb-0 min-h-screen">
         <div className="p-4 sm:p-6 lg:p-8">
-          {isPushSupported() && !pushEnabled && (
+          {pushStatus === 'needs-enable' && (
             <div className="mb-4 flex items-center gap-3 p-3 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 shadow-sm">
               <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
                 <Bell className="w-5 h-5 text-emerald-600" />
@@ -369,16 +410,19 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
               </div>
               <button
                 disabled={pushLoading}
-                onClick={async () => {
-                  setPushLoading(true);
-                  const ok = await enablePushFromGesture(currentUser.auth_user_id);
-                  if (ok) setPushEnabled(true);
-                  setPushLoading(false);
-                }}
+                onClick={handleEnablePush}
                 className="shrink-0 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors cursor-pointer shadow-md"
               >
                 {pushLoading ? '...' : 'Activar'}
               </button>
+            </div>
+          )}
+          {pushStatus === 'denied' && (
+            <div className="mb-4 flex items-center gap-3 p-3 sm:p-4 rounded-2xl bg-amber-50 border border-amber-200 shadow-sm">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-amber-900">Notificaciones bloqueadas en este dispositivo</p>
+                <p className="text-xs text-amber-700">En Chrome: toca el candado al lado de la dirección → Permisos → Notificaciones → Permitir.</p>
+              </div>
             </div>
           )}
           {showLockScreen ? (

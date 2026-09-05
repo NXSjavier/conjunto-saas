@@ -3,9 +3,54 @@ import { supabase } from './supabaseClient';
 
 let unregister: (() => void) | null = null;
 
+const deviceFlagKey = (authUserId: string) => `push_device_token_${authUserId}`;
+
+export type PushStatus = 'unsupported' | 'denied' | 'needs-enable' | 'ready';
+
 /**
- * After login: only save token if permission already granted.
- * Does NOT prompt user (needs user gesture on mobile).
+ * Estado de push para ESTE dispositivo (no global del usuario).
+ */
+export function getPushStatus(authUserId?: string | null): PushStatus {
+  if (!isPushSupported()) return 'unsupported';
+  if (typeof Notification === 'undefined') return 'unsupported';
+  if (Notification.permission === 'denied') return 'denied';
+  if (Notification.permission !== 'granted') return 'needs-enable';
+  if (authUserId && !localStorage.getItem(deviceFlagKey(authUserId))) return 'needs-enable';
+  return 'ready';
+}
+
+function deviceLabel(): string {
+  try {
+    const ua = navigator.userAgent || '';
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+    const platform = (navigator as any).userAgentData?.platform || navigator.platform || '';
+    return `${isMobile ? 'movil' : 'pc'} ${platform}`.trim().slice(0, 80);
+  } catch {
+    return 'desconocido';
+  }
+}
+
+async function saveDeviceToken(authUserId: string, token: string) {
+  // Token multi-dispositivo (tabla push_tokens) + legacy (profiles.fcm_token)
+  try {
+    await supabase.from('push_tokens').upsert(
+      { auth_user_id: authUserId, token, device_label: deviceLabel(), updated_at: new Date().toISOString() },
+      { onConflict: 'token' }
+    );
+  } catch (err) {
+    console.error('saveDeviceToken push_tokens error:', err);
+  }
+  try {
+    await supabase.from('profiles').update({ fcm_token: token }).eq('auth_user_id', authUserId);
+  } catch {}
+  try {
+    localStorage.setItem(deviceFlagKey(authUserId), token);
+  } catch {}
+}
+
+/**
+ * Después del login: solo guarda el token si el permiso ya fue otorgado.
+ * NO pide permiso (en móvil requiere gesto del usuario).
  */
 export async function initPushNotifications(userId: string): Promise<boolean> {
   try {
@@ -14,8 +59,7 @@ export async function initPushNotifications(userId: string): Promise<boolean> {
     const token = await getExistingToken();
     if (!token) return false;
 
-    await supabase.from('profiles').update({ fcm_token: token }).eq('auth_user_id', userId);
-
+    await saveDeviceToken(userId, token);
     startForegroundListener();
     return true;
   } catch (err) {
@@ -25,16 +69,14 @@ export async function initPushNotifications(userId: string): Promise<boolean> {
 }
 
 /**
- * Enable push from user gesture (button tap).
- * This WILL prompt for permission.
+ * Activar push desde gesto del usuario (tap en botón). SÍ pide permiso.
  */
 export async function enablePushFromGesture(userId: string): Promise<boolean> {
   try {
     const token = await requestPushPermission();
     if (!token) return false;
 
-    await supabase.from('profiles').update({ fcm_token: token }).eq('auth_user_id', userId);
-
+    await saveDeviceToken(userId, token);
     startForegroundListener();
     return true;
   } catch (err) {
@@ -72,25 +114,63 @@ export function cleanupPushNotifications() {
     unregister();
     unregister = null;
   }
+  try {
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith('push_device_token_'))
+      .forEach((k) => localStorage.removeItem(k));
+  } catch {}
 }
 
+async function collectTokensForProfiles(profileIds: string[]): Promise<string[]> {
+  const tokens = new Set<string>();
+  try {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, auth_user_id, fcm_token')
+      .in('id', profileIds);
+    const list = profiles || [];
+    // Legacy: fcm_token directo en profiles
+    list.forEach((p: any) => { if (p?.fcm_token) tokens.add(p.fcm_token); });
+    // Multi-dispositivo: tabla push_tokens
+    const authIds = [...new Set(list.map((p: any) => p?.auth_user_id).filter(Boolean))];
+    if (authIds.length > 0) {
+      const { data: rows } = await supabase
+        .from('push_tokens')
+        .select('token')
+        .in('auth_user_id', authIds);
+      (rows || []).forEach((r: any) => { if (r?.token) tokens.add(r.token); });
+    }
+  } catch (err) {
+    console.error('collectTokens error:', err);
+  }
+  return [...tokens];
+}
+
+/**
+ * Enviar push notification a un usuario (TODOS sus dispositivos).
+ */
 export async function sendPushToUser(targetUserId: string, title: string, body: string, url?: string) {
   try {
-    const { data: profile } = await supabase.from('profiles').select('fcm_token').eq('id', targetUserId).single();
-    if (!profile?.fcm_token) return;
+    const tokens = await collectTokensForProfiles([targetUserId]);
+    if (tokens.length === 0) return;
+
     await supabase.functions.invoke('send-push', {
-      body: { token: profile.fcm_token, title, body, url: url || '/' },
+      body: { tokens, title, body, url: url || '/' },
     });
   } catch (err) {
     console.error('sendPushToUser error:', err);
   }
 }
 
+/**
+ * Enviar push a múltiples usuarios (TODOS sus dispositivos).
+ */
 export async function sendPushToMany(userIds: string[], title: string, body: string, url?: string) {
   try {
-    const { data: profiles } = await supabase.from('profiles').select('id, fcm_token').in('id', userIds);
-    const tokens = (profiles || []).map((p) => p.fcm_token).filter(Boolean);
+    if (userIds.length === 0) return;
+    const tokens = await collectTokensForProfiles(userIds);
     if (tokens.length === 0) return;
+
     await supabase.functions.invoke('send-push', {
       body: { tokens, title, body, url: url || '/' },
     });
