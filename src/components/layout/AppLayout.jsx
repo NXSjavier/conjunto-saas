@@ -358,6 +358,29 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
       {/* Main content */}
       <main className="lg:pl-64 pt-14 pb-20 lg:pt-20 lg:pb-0 min-h-screen">
         <div className="p-4 sm:p-6 lg:p-8">
+          {isPushSupported() && !pushEnabled && (
+            <div className="mb-4 flex items-center gap-3 p-3 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 shadow-sm">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+                <Bell className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-emerald-900">Recibe notificaciones en tu celular</p>
+                <p className="text-xs text-emerald-600">Visitas, incidencias, avisos y más al instante</p>
+              </div>
+              <button
+                disabled={pushLoading}
+                onClick={async () => {
+                  setPushLoading(true);
+                  const ok = await enablePushFromGesture(currentUser.auth_user_id);
+                  if (ok) setPushEnabled(true);
+                  setPushLoading(false);
+                }}
+                className="shrink-0 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors cursor-pointer shadow-md"
+              >
+                {pushLoading ? '...' : 'Activar'}
+              </button>
+            </div>
+          )}
           {showLockScreen ? (
             <div className="flex items-center justify-center min-h-[60vh]">
               <div className="text-center max-w-md mx-auto">
