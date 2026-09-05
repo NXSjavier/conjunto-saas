@@ -23,6 +23,7 @@ import {
   ClipboardList,
   Phone,
   Lock,
+  BookOpen,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -32,6 +33,7 @@ const NAV_ITEMS = {
     { id: 'super_admins', label: 'Administradores', icon: Shield },
     { id: 'super_users', label: 'Usuarios', icon: Users },
     { id: 'super_subscriptions', label: 'Suscripciones', icon: FileText },
+    { id: 'app_guide', label: 'Guía de Uso', icon: BookOpen },
   ],
   admin: [
     { id: 'admin_dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -45,6 +47,7 @@ const NAV_ITEMS = {
     { id: 'admin_guards', label: 'Guardas', icon: Shield },
     { id: 'admin_audits', label: 'Auditorías', icon: ClipboardList },
     { id: 'admin_reports', label: 'Reportes', icon: FileText },
+    { id: 'app_guide', label: 'Guía de Uso', icon: BookOpen },
   ],
   resident: [
     { id: 'resident_dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -53,9 +56,11 @@ const NAV_ITEMS = {
     { id: 'resident_visitors', label: 'Visitantes', icon: Phone },
     { id: 'resident_reservations', label: 'Reservas', icon: Calendar },
     { id: 'resident_incidents', label: 'Incidentes', icon: AlertTriangle },
+    { id: 'app_guide', label: 'Guía de Uso', icon: BookOpen },
   ],
   guard: [
     { id: 'guard_dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'app_guide', label: 'Guía de Uso', icon: BookOpen },
   ],
 };
 
@@ -65,21 +70,25 @@ const MOBILE_ITEMS = {
     { id: 'super_complexes', label: 'Conjuntos', icon: Building2 },
     { id: 'super_users', label: 'Usuarios', icon: Users },
     { id: 'super_subscriptions', label: 'Planes', icon: FileText },
+    { id: 'app_guide', label: 'Guía', icon: BookOpen },
   ],
   admin: [
     { id: 'admin_dashboard', label: 'Home', icon: LayoutDashboard },
     { id: 'admin_pending', label: 'Pendientes', icon: UserCheck },
     { id: 'admin_announcements', label: 'Avisos', icon: Megaphone },
     { id: 'admin_residents', label: 'Residentes', icon: Users },
+    { id: 'app_guide', label: 'Guía', icon: BookOpen },
   ],
   resident: [
     { id: 'resident_dashboard', label: 'Home', icon: LayoutDashboard },
     { id: 'resident_announcements', label: 'Avisos', icon: Megaphone },
     { id: 'resident_visitors', label: 'Visitas', icon: Phone },
     { id: 'resident_reservations', label: 'Reservas', icon: Calendar },
+    { id: 'app_guide', label: 'Guía', icon: BookOpen },
   ],
   guard: [
     { id: 'guard_dashboard', label: 'Home', icon: LayoutDashboard },
+    { id: 'app_guide', label: 'Guía', icon: BookOpen },
   ],
 };
 
