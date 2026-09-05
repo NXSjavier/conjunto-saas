@@ -30,32 +30,58 @@ function getFirebaseMessaging() {
   return messaging;
 }
 
+export function isPushSupported(): boolean {
+  return 'Notification' in window && 'serviceWorker' in navigator;
+}
+
+export function isPushGranted(): boolean {
+  return 'Notification' in window && Notification.permission === 'granted';
+}
+
+export function isPushDefault(): boolean {
+  return 'Notification' in window && Notification.permission === 'default';
+}
+
 export async function requestPushPermission(): Promise<string | null> {
   try {
-    if (!('Notification' in window)) return null;
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) return null;
+
     if (Notification.permission === 'granted') {
-      // Already granted
+      // proceed
     } else if (Notification.permission === 'default') {
       const result = await Notification.requestPermission();
       if (result !== 'granted') return null;
     } else {
-      return null; // denied
+      return null;
     }
 
     const fcm = getFirebaseMessaging();
     if (!fcm) return null;
 
-    const sw = await navigator.serviceWorker?.register('/firebase-messaging-sw.js');
-    if (sw) await navigator.serviceWorker?.ready;
+    const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
+    await navigator.serviceWorker.ready;
 
     const token = await getToken(fcm, {
       vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY || undefined,
-      serviceWorkerRegistration: await navigator.serviceWorker?.getRegistration(),
+      serviceWorkerRegistration: swReg,
     });
-
     return token || null;
   } catch (err) {
     console.error('requestPushPermission error:', err);
+    return null;
+  }
+}
+
+export async function getExistingToken(): Promise<string | null> {
+  try {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return null;
+    const fcm = getFirebaseMessaging();
+    if (!fcm) return null;
+    const token = await getToken(fcm, {
+      vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY || undefined,
+    });
+    return token || null;
+  } catch {
     return null;
   }
 }

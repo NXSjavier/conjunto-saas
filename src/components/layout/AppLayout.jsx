@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { NotificationBell } from '../ui/NotificationBell';
 import { cn, daysUntilExpiry } from '../../lib/utils';
+import { isPushSupported, isPushGranted } from '../../lib/firebase';
+import { enablePushFromGesture } from '../../lib/pushNotifications';
 import {
   Building2,
   LayoutDashboard,
@@ -24,6 +26,7 @@ import {
   Phone,
   Lock,
   BookOpen,
+  Bell,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -103,6 +106,8 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
   const { currentUser, currentComplex } = useAuth();
   const { users, notifications, markAllNotificationsAsRead, clearNotifications } = useData();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(isPushGranted());
+  const [pushLoading, setPushLoading] = useState(false);
 
   const role = currentUser?.role || 'resident';
   const navItems = NAV_ITEMS[role] || [];
@@ -212,7 +217,22 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
         })}
       </nav>
 
-      <div className="p-3 border-t border-slate-800">
+      <div className="p-3 border-t border-slate-800 space-y-2">
+        {isPushSupported() && !pushEnabled && (
+          <button
+            disabled={pushLoading}
+            onClick={async () => {
+              setPushLoading(true);
+              const ok = await enablePushFromGesture(currentUser.auth_user_id);
+              if (ok) setPushEnabled(true);
+              setPushLoading(false);
+            }}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-all cursor-pointer shadow-sm"
+          >
+            <Bell className="w-4 h-4" />
+            <span>{pushLoading ? 'Activando...' : 'Activar Notificaciones'}</span>
+          </button>
+        )}
         <button
           onClick={onLogout}
           className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 hover:text-rose-800 transition-all cursor-pointer shadow-sm"
