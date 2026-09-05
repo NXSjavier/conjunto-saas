@@ -158,9 +158,16 @@ Patrones aplicados en las vistas `.jsx` (las que se despliegan; `index.html` car
 - Barra superior movil: el titulo se oculta bajo 420px para no desbordar en pantallas de 320px.
 - Modales con `p-4`, `w-full` y `overflow-y-auto`.
 
-## Android
+## Android & Capacitor (Opción 1: Servidor Vercel Live OTA)
 
-Requiere Android Studio, Android SDK y Java 21. En Windows:
+La APK de Android está configurada con **Capacitor Live Server** apuntando a `https://conjuntos-app-pwa.vercel.app` en `capacitor.config.ts`.
+
+### ¿Cómo funcionan las actualizaciones en la APK?
+- **Cambios de Interfaz, Colores, Lógica React y Notificaciones**: Cada vez que ejecutas `npx vercel --prod --yes`, los cambios **se reflejan de inmediato dentro de la APK instalada en los celulares**, sin necesidad de reinstalar o compilar la APK de nuevo.
+- **Cambios Nativos de Android** (iconos nativos, permisos del manifest, plugins): Requieren compilar una nueva APK.
+
+### Compilar la APK Debug:
+En Windows con PowerShell:
 
 ```powershell
 $env:JAVA_HOME = "C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot"
@@ -170,20 +177,16 @@ cd android
 .\gradlew.bat assembleDebug
 ```
 
-APK resultante:
-
+### Ubicación de la APK resultante:
 ```text
 android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Instalacion con un telefono conectado y depuracion USB activa:
-
+### Instalación en dispositivo físico mediante USB:
 ```powershell
 adb devices
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
-
-Si `adb devices` no muestra un dispositivo, la APK puede compilarse pero no probarse fisicamente desde este equipo.
 
 ## Instalar la PWA en celulares
 

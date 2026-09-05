@@ -5,8 +5,9 @@ const config: CapacitorConfig = {
   appName: 'Conjuntos App',
   webDir: 'dist',
   server: {
-    androidScheme: 'https',
+    url: 'https://conjuntos-app-pwa.vercel.app',
     cleartext: true,
+    androidScheme: 'https',
   },
   android: {
     allowMixedContent: true,
