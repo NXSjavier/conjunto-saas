@@ -201,17 +201,6 @@ export default function GuestLayout({ onLogin }) {
     }
     setFlash(null);
     setRegNoLoading(true);
-    let facePhotoBase64 = null;
-    if (regNoFace) {
-      try {
-        facePhotoBase64 = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(regNoFace);
-        });
-      } catch {}
-    }
     const result = await registerWithoutCode({
       name: regNoName,
       email: regNoEmail,
@@ -219,7 +208,7 @@ export default function GuestLayout({ onLogin }) {
       complexId: regNoComplex,
       apartment: regNoApt,
       phone: regNoPhone,
-      facePhoto: facePhotoBase64,
+      facePhoto: regNoFace || null,
     });
     setRegNoLoading(false);
     if (result.success) {

@@ -6,7 +6,7 @@ import { notifyWhenHidden } from '../lib/appNotifications';
 import { generateUserDeletionCertificatePDF, generateSubscriptionReceiptPDF } from '../lib/pdf';
 import { getApiBaseUrl, isStandalone } from '../lib/config';
 import { supabase } from '../lib/supabaseClient';
-import { fetchBootstrapDirect, fetchComplexesDirect } from '../lib/supabaseRepo';
+import { fetchBootstrapDirect, fetchBootstrapHeavy, fetchComplexesDirect } from '../lib/supabaseRepo';
 
 const DataContext = createContext(undefined);
 const apiBase = getApiBaseUrl();
@@ -40,7 +40,6 @@ export const DataProvider = ({ children }) => {
     try {
       setIsLoading(true);
       if (standalone) {
-        // Directo a Supabase cloud, sin IP ni servidor local
         if (currentUser) {
           const data = await fetchBootstrapDirect(currentUser.complex_id || '', currentUser.id, currentUser.role);
           setComplexes(data.complexes || []);
@@ -49,11 +48,15 @@ export const DataProvider = ({ children }) => {
           setGuards(data.guards || []);
           setAnnouncements(data.announcements || []);
           setComments(data.comments || []);
-          setIncidents(data.incidents || []);
-          setReservations(data.reservations || []);
-          setVisitors(data.visitors || []);
-          setAudits(data.audits || []);
-          setNotifications(data.notifications || []);
+          setIsLoading(false);
+          fetchBootstrapHeavy(currentUser.complex_id || '', currentUser.id, currentUser.role).then((heavy) => {
+            setIncidents(heavy.incidents || []);
+            setReservations(heavy.reservations || []);
+            setVisitors(heavy.visitors || []);
+            setAudits(heavy.audits || []);
+            setNotifications(heavy.notifications || []);
+          }).catch(() => {});
+          return;
         } else {
           const list = await fetchComplexesDirect();
           setComplexes(list);
@@ -89,11 +92,14 @@ export const DataProvider = ({ children }) => {
         setGuards(data.guards || []);
         setAnnouncements(data.announcements || []);
         setComments(data.comments || []);
-        setIncidents(data.incidents || []);
-        setReservations(data.reservations || []);
-        setVisitors(data.visitors || []);
-        setAudits(data.audits || []);
-        setNotifications(data.notifications || []);
+        setIsLoading(false);
+        fetchBootstrapHeavy(currentUser.complex_id || '', currentUser.id, currentUser.role).then((heavy) => {
+          setIncidents(heavy.incidents || []);
+          setReservations(heavy.reservations || []);
+          setVisitors(heavy.visitors || []);
+          setAudits(heavy.audits || []);
+          setNotifications(heavy.notifications || []);
+        }).catch(() => {});
       } else {
         try {
           const res = await apiFetch('/api/complexes');

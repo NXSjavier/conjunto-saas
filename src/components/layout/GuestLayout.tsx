@@ -237,11 +237,7 @@ export const GuestLayout: React.FC = () => {
         setFlash({ message: 'La imagen excede el límite máximo de 2MB', type: 'error' });
         return;
       }
-      const reader = new FileReader();
-      reader.onload = () => {
-        setFacePhoto(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      setFacePhoto(file as any);
     }
   };
 
