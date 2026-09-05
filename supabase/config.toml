@@ -1,0 +1,20 @@
+# Supabase config - solo Supabase + Vercel (sin backend externo)
+# Edge Functions: admin-create, guard-create usan service_role de forma segura
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[functions.admin-create]
+enabled = true
+verify_jwt = true
+import_map = "./functions/admin-create/import_map.json"
+entrypoint = "./functions/admin-create/index.ts"
+
+[functions.guard-create]
+enabled = true
+verify_jwt = true
+import_map = "./functions/guard-create/import_map.json"
+entrypoint = "./functions/guard-create/index.ts"

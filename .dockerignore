@@ -1,0 +1,8 @@
+node_modules
+android
+dist
+.git
+.supabase
+.vercel
+.env
+.env.local

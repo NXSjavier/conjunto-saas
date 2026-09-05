@@ -248,11 +248,28 @@ export const DataProvider = ({ children }) => {
     playSuccessChime();
   };
   const createAdmin = async (data) => {
+    // Modo Supabase puro: Edge Function segura (service_role nunca en el navegador)
+    // Funciona en Vercel y Android sin backend Express/Fly/Render
     if (standalone) {
-      alert('Para crear un administrador se necesita el backend seguro. Configura VITE_API_BASE_URL en la PWA.');
-      return null;
+      const { data: user, error } = await supabase.functions.invoke('admin-create', { body: data });
+      if (error) {
+        const msg = error.message || "";
+        // Mensaje más claro cuando la function aún no está desplegada
+        if (msg.includes("not found") || msg.includes("Function not found") || msg.includes("404")) {
+          alert("Edge Function 'admin-create' no desplegada. Ve a Supabase Dashboard > Edge Functions y desplegala o ejecuta: npx supabase functions deploy admin-create --project-ref kptuyksmdomgqntsdzsu");
+          return null;
+        }
+        alert(`No se pudo crear el administrador: ${msg}`);
+        return null;
+      }
+      // supabase.functions.invoke envuelve errores de la function en data.error si status != 2xx
+      if (user && user.error) { alert(`No se pudo crear: ${user.error}`); return null; }
+      if (!user || !user.id) { alert("Respuesta inesperada del servidor al crear admin"); return null; }
+      setUsers((p) => [user, ...p]);
+      playSuccessChime();
+      return user;
     }
-    try { const res = await apiFetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...data, role: 'admin', status: 'active' }) }); if (res.ok) { const user = await res.json(); playSuccessChime(); return user; } } catch (e) { console.error(e); } return null;
+    try { const res = await apiFetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...data, role: 'admin', status: 'active' }) }); if (res.ok) { const user = await res.json(); playSuccessChime(); return user; } const err = await res.json().catch(()=>({})); alert(err.error || "No se pudo crear admin (backend)"); } catch (e) { console.error(e); } return null;
   };
   const purgeUserAccountCascading = async (userId) => {
     const userToPurge = users.find((u) => u.id === userId);
@@ -311,11 +328,22 @@ export const DataProvider = ({ children }) => {
     if (!currentComplex) return null;
     if (handleLimitExceeded('guards')) return null;
     if (standalone) {
-      const id = genId('u');
-      const payload = { id, name: data.name, email: data.email.trim().toLowerCase(), password: data.password || 'guard123', role: 'guard', complex_id: currentComplex.id, phone: data.phone || null, status: 'active', created_at: new Date().toISOString() };
-      const { data: created, error } = await supabase.from('profiles').insert(payload).select('id, name, email, phone, complex_id, status, created_at').single();
-      if (!error && created) { setGuards((p) => [created, ...p]); setUsers((p) => [payload, ...p]); playSuccessChime(); return created; }
-      return null;
+      const { data: created, error } = await supabase.functions.invoke('guard-create', { body: { ...data, complex_id: currentComplex.id } });
+      if (error) {
+        const msg = error.message || "";
+        if (msg.includes("not found") || msg.includes("Function not found") || msg.includes("404")) {
+          alert("Edge Function 'guard-create' no desplegada. Desplegala en Supabase Dashboard.");
+          return null;
+        }
+        alert(`No se pudo crear el guarda: ${msg}`);
+        return null;
+      }
+      if (created && created.error) { alert(`No se pudo crear: ${created.error}`); return null; }
+      if (!created || !created.id) { alert("Respuesta inesperada al crear guarda"); return null; }
+      setGuards((p) => [created, ...p]);
+      setUsers((p) => [created, ...p]);
+      playSuccessChime();
+      return created;
     }
     try { const res = await apiFetch('/api/guards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...data, complex_id: currentComplex.id }) }); if (res.ok) { const created = await res.json(); playSuccessChime(); return created; } } catch (e) { console.error(e); } return null;
   };

@@ -16,13 +16,15 @@ export const isNative = () => {
   }
 };
 
-// true = la app corre empaquetada sin servidor local -> habla directo a Supabase cloud
+// Arquitectura objetivo: Solo Supabase + Vercel (sin Fly/Render).
+// isStandalone = true en Vercel cuando NO hay VITE_API_BASE_URL -> usa Supabase directo + Edge Functions.
+// En Capacitor también es standalone.
 export const isStandalone = () => isNative();
 
-// En standalone no hay servidor local: apiBase vacío -> se usa Supabase directo
+// En modo Supabase puro retorna '' -> DataContext usa supabase directo + Edge Functions
+// Si algún día quieres backend legacy, define VITE_API_BASE_URL=https://...
 export const getApiBaseUrl = () => {
   if (import.meta.env.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
-  // En móvil standalone no usamos 10.0.2.2, usamos Supabase cloud
   return '';
 };
 
