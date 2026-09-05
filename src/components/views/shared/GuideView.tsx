@@ -3,7 +3,7 @@ import {
   BookOpen, Download, ChevronDown, ChevronRight, Shield, Users, Home,
   QrCode, Megaphone, AlertTriangle, CalendarCheck, CheckCircle2, Eye,
   ClipboardList, UserCheck, Building, Lock, Bell, FileText, Camera,
-  Settings, BarChart3, Compass, Key, ArrowRight, Star, Zap
+  Settings, BarChart3, Compass, Key, ArrowRight, Star, Zap, LayoutDashboard
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { Button } from '../../ui/Button';
