@@ -15,6 +15,7 @@ export function getPushStatus(authUserId?: string | null): PushStatus {
   if (typeof Notification === 'undefined') return 'unsupported';
   if (Notification.permission === 'denied') return 'denied';
   if (Notification.permission !== 'granted') return 'needs-enable';
+  if (authUserId && !localStorage.getItem(deviceFlagKey(authUserId))) return 'needs-enable';
   return 'ready';
 }
 
