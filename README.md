@@ -117,13 +117,36 @@ Solucion aplicada:
 2. Los envios consultan `push_tokens` (+ `profiles.fcm_token` como fallback) y mandan a TODOS los dispositivos.
 3. El banner ahora depende del estado de ESTE dispositivo (`localStorage`), no del permiso global: si el permiso ya estaba otorgado pero el dispositivo no tiene token, se registra en silencio al abrir la app.
 
-Si un celular no recibe push, verificar en este orden:
+### Protocolo a seguir tras CADA modificación (Para notificaciones PWA y Google FCM)
 
-1. El banner verde aparece → tocar **Activar** y aceptar el permiso.
-2. Si aparece el banner amarillo (bloqueadas): en Chrome tocar el candado junto a la direccion → Permisos → Notificaciones → Permitir.
-3. Tocar **Probar** en el sidebar: debe llegar una push de prueba.
-4. Confirmar en Supabase que `push_tokens` tiene una fila con el token de ese dispositivo.
-5. Si la pagina muestra version vieja: cerrar todas las pestanas del sitio y reabrir (el service worker cachea el shell).
+Cada vez que realices cambios en la aplicación y quieras que funcionen las notificaciones Push en segundo plano y con la app cerrada en PWA y Google:
+
+1. **Compilar y Verificar localmente**:
+   ```powershell
+   npm run build
+   ```
+2. **Subir los cambios a GitHub**:
+   ```powershell
+   git add .
+   git commit -m "feat: descripcion del cambio"
+   git push origin main
+   ```
+3. **Desplegar a producción en Vercel**:
+   ```powershell
+   npx vercel --prod --yes
+   ```
+4. **Actualización Automática en Celulares de Usuarios**:
+   - La PWA automáticamente desregistrará cualquier Service Worker anterior (`/sw.js`) e instalará el Service Worker unificado (`/firebase-messaging-sw.js`).
+   - Al volver a abrir la PWA instalada en la pantalla de inicio, si el dispositivo aún no ha guardado su token FCM, aparecerá un **banner verde superior** *"Recibe notificaciones en tu celular"*. El usuario solo debe tocar **Activar** una vez.
+   - En Android, asegúrate de que el archivo `public/manifest.webmanifest` mantenga `"gcm_sender_id": "103953800507"`, `"id": "/"` y `"scope": "/"`.
+
+Si un celular no recibe push tras una actualización:
+
+1. Abrir la PWA instalada y verificar si aparece el banner verde → tocar **Activar**.
+2. Si aparece el banner amarillo (bloqueadas): en los ajustes de la PWA/navegador → Permisos → Notificaciones → Permitir.
+3. Deslizar hacia abajo en la app para recargar (Pull to refresh) para forzar la sincronización del token.
+4. Confirmar en la tabla `push_tokens` de Supabase que existe un registro para ese usuario con el dispositivo etiquetado (`pwa-instalada` o `movil`).
+
 
 ## Responsive movil
 
