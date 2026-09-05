@@ -22,8 +22,10 @@ function deviceLabel(): string {
   try {
     const ua = navigator.userAgent || '';
     const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+    const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || (navigator as any).standalone;
     const platform = (navigator as any).userAgentData?.platform || navigator.platform || '';
-    return `${isMobile ? 'movil' : 'pc'} ${platform}`.trim().slice(0, 80);
+    const type = isStandalone ? 'pwa-instalada' : (isMobile ? 'movil' : 'pc');
+    return `${type} ${platform}`.trim().slice(0, 80);
   } catch {
     return 'desconocido';
   }
