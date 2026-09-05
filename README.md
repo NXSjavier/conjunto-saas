@@ -166,6 +166,17 @@ La APK de Android está configurada con **Capacitor Live Server** apuntando a `h
 - **Cambios de Interfaz, Colores, Lógica React y Notificaciones**: Cada vez que ejecutas `npx vercel --prod --yes`, los cambios **se reflejan de inmediato dentro de la APK instalada en los celulares**, sin necesidad de reinstalar o compilar la APK de nuevo.
 - **Cambios Nativos de Android** (iconos nativos, permisos del manifest, plugins): Requieren compilar una nueva APK.
 
+### Push nativo en la APK (requerido, una vez por PC que compile)
+
+Sin este archivo el plugin `@capacitor/push-notifications` no funciona (el build lo avisa: *"google-services.json not found... Push Notifications won't work"*).
+
+1. En Firebase Console → Project Settings → Your apps → **Add app** → Android.
+2. Package name: `com.conjuntos.app` (el `appId` de `capacitor.config.ts`).
+3. Descarga `google-services.json` y colócalo en `android/app/google-services.json` (está en `.gitignore`, no se sube al repo).
+4. Recompila la APK. Al abrirla e iniciar sesión, el banner **Activar** pide el permiso del sistema y guarda el token con etiqueta `apk-android` en `push_tokens`.
+
+El código JS del puente vive en `src/lib/capacitorNotifications.ts` (permiso, token, listeners de tap) y se usa desde `src/lib/pushNotifications.ts` cuando `Capacitor.isNativePlatform()` es true. En web/PWA se usa el flujo FCM web sin cambios.
+
 ### Compilar la APK Debug:
 En Windows con PowerShell:
 

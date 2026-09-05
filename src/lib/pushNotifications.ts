@@ -1,5 +1,12 @@
 import { requestPushPermission, getExistingToken, onPushMessage, isPushSupported, isPushGranted } from './firebase';
+import {
+  isNative,
+  requestNativeToken,
+  registerNativeSilently,
+  onNativePushEvents,
+} from './capacitorNotifications';
 import { supabase } from './supabaseClient';
+import { playNotificationBeep } from './sound';
 
 let unregister: (() => void) | null = null;
 
@@ -11,6 +18,11 @@ export type PushStatus = 'unsupported' | 'denied' | 'needs-enable' | 'ready';
  * Estado de push para ESTE dispositivo (no global del usuario).
  */
 export function getPushStatus(authUserId?: string | null): PushStatus {
+  if (isNative()) {
+    // En APK no hay serviceWorker web; el estado lo define el token guardado.
+    if (authUserId && !localStorage.getItem(deviceFlagKey(authUserId))) return 'needs-enable';
+    return 'ready';
+  }
   if (!isPushSupported()) return 'unsupported';
   if (typeof Notification === 'undefined') return 'unsupported';
   if (Notification.permission === 'denied') return 'denied';
@@ -21,6 +33,7 @@ export function getPushStatus(authUserId?: string | null): PushStatus {
 
 function deviceLabel(): string {
   try {
+    if (isNative()) return 'apk-android';
     const ua = navigator.userAgent || '';
     const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
     const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || (navigator as any).standalone;
@@ -52,10 +65,19 @@ async function saveDeviceToken(authUserId: string, token: string) {
 
 /**
  * Después del login: solo guarda el token si el permiso ya fue otorgado.
- * NO pide permiso (en móvil requiere gesto del usuario).
+ * NO pide permiso web (en móvil requiere gesto del usuario).
+ * En APK nativa registra en silencio (sin diálogo si ya fue otorgado).
  */
 export async function initPushNotifications(userId: string): Promise<boolean> {
   try {
+    if (isNative()) {
+      startForegroundListener();
+      registerNativeSilently((token) => {
+        saveDeviceToken(userId, token).catch(() => {});
+      });
+      return true;
+    }
+
     if (!isPushSupported() || !isPushGranted()) return false;
 
     const token = await getExistingToken();
@@ -75,6 +97,14 @@ export async function initPushNotifications(userId: string): Promise<boolean> {
  */
 export async function enablePushFromGesture(userId: string): Promise<boolean> {
   try {
+    if (isNative()) {
+      const token = await requestNativeToken();
+      if (!token) return false;
+      await saveDeviceToken(userId, token);
+      startForegroundListener();
+      return true;
+    }
+
     const token = await requestPushPermission();
     if (!token) return false;
 
@@ -88,6 +118,21 @@ export async function enablePushFromGesture(userId: string): Promise<boolean> {
 }
 
 function startForegroundListener() {
+  if (isNative()) {
+    onNativePushEvents(
+      () => {
+        // App abierta: Realtime ya actualiza la UI, solo suena el beep.
+        try { playNotificationBeep(); } catch {}
+      },
+      (e) => {
+        // Tap en la notificación: abrir la url del evento.
+        try {
+          if (e.url && e.url !== '/') window.location.assign(e.url);
+        } catch {}
+      }
+    );
+    return;
+  }
   if (unregister) unregister();
   unregister = onPushMessage(async (payload) => {
     const title = payload.notification?.title || 'Conjuntos App';
