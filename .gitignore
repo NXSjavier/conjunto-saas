@@ -11,5 +11,7 @@ coverage/
 .env*
 supabase/.temp/
 
+android/app/google-services.json
+
 .github/
 
