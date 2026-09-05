@@ -23,6 +23,7 @@ import {
   Check,
   UserX,
   ShieldAlert,
+  BookOpen,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
@@ -109,6 +110,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               { id: 'super_admins', label: 'Administradores', icon: <Users className="h-4 w-4" /> },
               { id: 'super_users', label: 'Usuarios & Purga BD', icon: <UserX className="h-4 w-4" /> },
               { id: 'super_subscriptions', label: 'Suscripciones SaaS', icon: <CreditCard className="h-4 w-4" /> },
+              { id: 'app_guide', label: 'Guía de Uso', icon: <BookOpen className="h-4 w-4" /> },
             ],
           },
         ]
@@ -146,6 +148,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             items: [
               { id: 'admin_reports', label: 'Reportes y Métricas', icon: <FileSpreadsheet className="h-4 w-4" /> },
               { id: 'admin_audits', label: 'Auditoría', icon: <Compass className="h-4 w-4" /> },
+              { id: 'app_guide', label: 'Guía de Uso', icon: <BookOpen className="h-4 w-4" /> },
             ],
           },
         ]
@@ -167,6 +170,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               { id: 'resident_visitors', label: 'Generar Visita', icon: <QrCode className="h-4 w-4" /> },
               { id: 'resident_reservations', label: 'Reservar Áreas', icon: <CalendarCheck className="h-4 w-4" /> },
               { id: 'resident_incidents', label: 'Reportar Incidencia', icon: <AlertTriangle className="h-4 w-4" /> },
+              { id: 'app_guide', label: 'Guía de Uso', icon: <BookOpen className="h-4 w-4" /> },
             ],
           },
         ]
@@ -180,6 +184,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               { id: 'guard_dashboard', label: 'Panel Garita', icon: <LayoutDashboard className="h-4 w-4" /> },
               { id: 'guard_validator', label: 'Validar Código Visita', icon: <QrCode className="h-4 w-4" /> },
               { id: 'guard_directory', label: 'Directorio Telefónico', icon: <Users className="h-4 w-4" /> },
+              { id: 'app_guide', label: 'Guía de Uso', icon: <BookOpen className="h-4 w-4" /> },
             ],
           },
         ]

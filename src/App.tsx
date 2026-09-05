@@ -39,6 +39,9 @@ import { AdminsView } from './components/views/super/AdminsView';
 import { SubscriptionsView } from './components/views/super/SubscriptionsView';
 import { SuperUsersView } from './components/views/super/SuperUsersView';
 
+// Shared Views
+import { GuideView } from './components/views/shared/GuideView';
+
 const AppContent: React.FC = () => {
   const { currentUser, isLoading } = useAuth();
   const [currentView, setCurrentView] = useState<string>('admin_dashboard');
@@ -112,6 +115,10 @@ const AppContent: React.FC = () => {
         return <AuditsView />;
       case 'admin_reports':
         return <ReportsView />;
+
+      // Shared Views
+      case 'app_guide':
+        return <GuideView />;
 
       // Resident Views
       case 'resident_dashboard':

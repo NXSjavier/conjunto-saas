@@ -38,6 +38,9 @@ import { GuardDashboard } from './components/views/guard/GuardDashboard';
 import { GuardVisitorValidatorView } from './components/views/guard/GuardVisitorValidatorView';
 import { GuardDirectoryView } from './components/views/guard/GuardDirectoryView';
 
+// Shared views
+import { GuideView } from './components/views/shared/GuideView';
+
 const DEFAULT_VIEWS = {
   super_admin: 'super_dashboard',
   admin: 'admin_dashboard',
@@ -174,6 +177,10 @@ function AuthenticatedApp() {
         return <GuardVisitorValidatorView />;
       case 'guard_directory':
         return <GuardDirectoryView />;
+
+      // Shared
+      case 'app_guide':
+        return <GuideView />;
 
       default:
         return (
