@@ -13,9 +13,9 @@ const DataContext = createContext(undefined);
 const apiBase = getApiBaseUrl();
 const apiFetch = (path, options = {}) => fetch(`${apiBase}${path}`, options);
 const genId = (p) => `${p}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-const playNotificationBeep = () => {
+const playNotificationBeep = (title, body) => {
   playNotificationSound();
-  notifyWhenHidden('Conjuntos App', 'Tienes una actualización nueva.');
+  notifyWhenHidden(title || 'Conjuntos App', body || 'Tienes una actualización nueva.');
 };
 
 export const DataProvider = ({ children }) => {
@@ -130,7 +130,7 @@ export const DataProvider = ({ children }) => {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'visitors' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             setVisitors((p) => [payload.new, ...p.filter((v) => v.id !== payload.new.id)]);
-            playNotificationBeep();
+            playNotificationBeep('Nuevo Pase de Visita', `${payload.new.visitor_name} — Apt ${payload.new.destination_apartment || '?'}`);
             sendPushToMany(
               (users || []).filter((u) => u.role === 'admin' && u.complex_id === payload.new.complex_id).map((u) => u.id),
               'Nuevo Pase de Visita',
@@ -140,7 +140,7 @@ export const DataProvider = ({ children }) => {
           }
           if (payload.eventType === 'UPDATE') {
             setVisitors((p) => p.map((v) => v.id === payload.new.id ? payload.new : v));
-            playNotificationBeep();
+            playNotificationBeep('Visita Actualizada', `${payload.new.visitor_name} — ${payload.new.status?.toUpperCase() || ''}`);
             if (payload.new.resident_id && (payload.new.status === 'in' || payload.new.status === 'out')) {
               sendPushToUser(
                 payload.new.resident_id,
@@ -155,7 +155,7 @@ export const DataProvider = ({ children }) => {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             setAnnouncements((p) => [payload.new, ...p.filter((a) => a.id !== payload.new.id)]);
-            playNotificationBeep();
+            playNotificationBeep('Nuevo Comunicado', payload.new.title);
             sendPushToMany(
               (users || []).filter((u) => u.complex_id === payload.new.complex_id && u.id !== currentUser?.id).map((u) => u.id),
               'Nuevo Comunicado',
@@ -167,13 +167,13 @@ export const DataProvider = ({ children }) => {
           if (payload.eventType === 'DELETE') setAnnouncements((p) => p.filter((a) => a.id !== payload.old.id));
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'announcement_comments' }, (payload) => {
-          if (payload.eventType === 'INSERT') { setComments((p) => [...p.filter((c) => c.id !== payload.new.id), payload.new]); playNotificationBeep(); }
+          if (payload.eventType === 'INSERT') { setComments((p) => [...p.filter((c) => c.id !== payload.new.id), payload.new]); playNotificationBeep('Nuevo Comentario', payload.new.text?.substring(0, 50) || 'Nuevo comentario'); }
           if (payload.eventType === 'DELETE') setComments((p) => p.filter((c) => c.id !== payload.old.id));
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             setIncidents((p) => [payload.new, ...p.filter((i) => i.id !== payload.new.id)]);
-            playNotificationBeep();
+            playNotificationBeep('Nueva Incidencia', `${payload.new.title} — ${payload.new.priority || 'Normal'}`);
             sendPushToMany(
               (users || []).filter((u) => u.role === 'admin' && u.complex_id === payload.new.complex_id).map((u) => u.id),
               'Nueva Incidencia Reportada',
@@ -187,7 +187,7 @@ export const DataProvider = ({ children }) => {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             setReservations((p) => [payload.new, ...p.filter((r) => r.id !== payload.new.id)]);
-            playNotificationBeep();
+            playNotificationBeep('Nueva Reserva', `${payload.new.area_name} — ${payload.new.reservation_date || ''}`);
             sendPushToMany(
               (users || []).filter((u) => u.role === 'admin' && u.complex_id === payload.new.complex_id).map((u) => u.id),
               'Nueva Solicitud de Reserva',
@@ -202,7 +202,7 @@ export const DataProvider = ({ children }) => {
           if (payload.eventType === 'INSERT') {
             setUsers((p) => [payload.new, ...p.filter((u) => u.id !== payload.new.id)]);
             if (payload.new.role === 'guard') setGuards((p) => [payload.new, ...p.filter((g) => g.id !== payload.new.id)]);
-            playNotificationBeep();
+            playNotificationBeep('Nuevo Usuario', `${payload.new.name || ''} — ${payload.new.role || ''}`);
           }
           if (payload.eventType === 'UPDATE') {
             setUsers((p) => p.map((u) => u.id === payload.new.id ? payload.new : u));
@@ -225,7 +225,7 @@ export const DataProvider = ({ children }) => {
           if (payload.eventType === 'INSERT') {
             if (!currentUser || payload.new.user_id === currentUser.id) {
               setNotifications((p) => [payload.new, ...p.filter((n) => n.id !== payload.new.id)]);
-              playNotificationBeep();
+              playNotificationBeep(payload.new.title || 'Notificación', payload.new.message || '');
             }
           }
           if (payload.eventType === 'UPDATE') setNotifications((p) => p.map((n) => n.id === payload.new.id ? payload.new : n));
@@ -432,8 +432,8 @@ export const DataProvider = ({ children }) => {
   };
   const addComment = async (announcementId, content) => {
     if (!currentUser) return;
-    if (standalone) { const id = genId('comm'); const payload = { id, announcement_id: announcementId, author_name: currentUser.name, author_id: currentUser.id, content, created_at: new Date().toISOString() }; const { data: created, error } = await supabase.from('announcement_comments').insert(payload).select().single(); if (!error && created) { setComments((p) => [...p, created]); playNotificationBeep(); } return; }
-    try { const res = await apiFetch(`/api/announcements/${announcementId}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ author_name: currentUser.name, author_id: currentUser.id, content }) }); if (res.ok) { await res.json(); playNotificationBeep(); } } catch (e) { console.error(e); }
+    if (standalone) { const id = genId('comm'); const payload = { id, announcement_id: announcementId, author_name: currentUser.name, author_id: currentUser.id, content, created_at: new Date().toISOString() }; const { data: created, error } = await supabase.from('announcement_comments').insert(payload).select().single(); if (!error && created) { setComments((p) => [...p, created]); playNotificationBeep('Nuevo Comentario', content.substring(0, 50)); } return; }
+    try { const res = await apiFetch(`/api/announcements/${announcementId}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ author_name: currentUser.name, author_id: currentUser.id, content }) }); if (res.ok) { await res.json(); playNotificationBeep('Nuevo Comentario', content.substring(0, 50)); } } catch (e) { console.error(e); }
   };
   const deleteComment = async (commentId) => {
     if (standalone) {
@@ -491,10 +491,10 @@ export const DataProvider = ({ children }) => {
     if (standalone) {
       const now = new Date().toISOString(); const update = { status }; if (status === 'in') update.checked_in_at = now; if (status === 'out') update.checked_out_at = now;
       const { data: visitor } = await supabase.from('visitors').update(update).eq('id', id).select().single();
-      if (visitor) { if (visitor.resident_id) await supabase.from('notifications').insert({ id: genId('notif'), user_id: visitor.resident_id, title: status === 'in' ? 'Visitante Ingresó' : status === 'out' ? 'Visitante Salió' : 'Pase Actualizado', message: `${visitor.visitor_name} (${visitor.code}) → ${status.toUpperCase()}`, read: 0, created_at: now }).then(()=>{},()=>{}); setVisitors((prev) => prev.map((v) => (v.id === id ? visitor : v))); playNotificationBeep(); }
+      if (visitor) { if (visitor.resident_id) await supabase.from('notifications').insert({ id: genId('notif'), user_id: visitor.resident_id, title: status === 'in' ? 'Visitante Ingresó' : status === 'out' ? 'Visitante Salió' : 'Pase Actualizado', message: `${visitor.visitor_name} (${visitor.code}) → ${status.toUpperCase()}`, read: 0, created_at: now }).then(()=>{},()=>{}); setVisitors((prev) => prev.map((v) => (v.id === id ? visitor : v))); playNotificationBeep(status === 'in' ? 'Visitante Ingresó' : 'Visitante Salió', `${visitor.visitor_name} (${visitor.code}) → ${status.toUpperCase()}`); }
       return;
     }
-    try { const res = await apiFetch(`/api/visitors/${id}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); if (res.ok) { const updated = await res.json(); setVisitors((prev) => prev.map((v) => (v.id === id ? updated : v))); playNotificationBeep(); } } catch (e) { console.error(e); }
+    try { const res = await apiFetch(`/api/visitors/${id}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); if (res.ok) { const updated = await res.json(); setVisitors((prev) => prev.map((v) => (v.id === id ? updated : v))); playNotificationBeep(status === 'in' ? 'Visitante Ingresó' : 'Visitante Salió', `Estado actualizado a ${status.toUpperCase()}`); } } catch (e) { console.error(e); }
   };
   const markAllNotificationsAsRead = async () => {
     if (!currentUser) return;
