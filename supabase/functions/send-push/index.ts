@@ -1,5 +1,7 @@
 // Edge Function: send-push
 // Envía push notifications via FCM HTTP v1 API
+// Soporta: flat body ({ tokens, title, body, url }) y wrapped ({ tokens, notification, data })
+// Limpia automáticamente tokens inválidos (NOT_FOUND / UNREGISTERED)
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -7,10 +9,21 @@ const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// --- Firebase credentials ---
 const FIREBASE_PROJECT_ID = Deno.env.get("FIREBASE_PROJECT_ID") || "";
 const FIREBASE_CLIENT_EMAIL = Deno.env.get("FIREBASE_CLIENT_EMAIL") || "";
 const RAW_KEY = Deno.env.get("FIREBASE_PRIVATE_KEY") || "";
 const FIREBASE_PRIVATE_KEY = RAW_KEY.replace(/\\n/g, "\n").replace(/\\r/g, "");
+
+// --- Token cache ---
+let cachedAccessToken: string | null = null;
+let cachedTokenExpiresAt = 0;
+
+// --- Supabase admin (for token cleanup) ---
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+
+// --- JWT helpers ---
 
 function base64url(input: Uint8Array | string): string {
   let b64: string;
@@ -38,13 +51,16 @@ function pemToBinaryDer(pem: string): ArrayBuffer {
 }
 
 async function getAccessToken(): Promise<string | null> {
+  // Return cached token if it has more than 5 minutes of life
+  if (cachedAccessToken && Date.now() < cachedTokenExpiresAt - 300_000) {
+    return cachedAccessToken;
+  }
+
   if (!FIREBASE_PROJECT_ID || !FIREBASE_CLIENT_EMAIL || !FIREBASE_PRIVATE_KEY) {
     console.error("Firebase env vars missing:", {
       hasProjectId: !!FIREBASE_PROJECT_ID,
       hasClientEmail: !!FIREBASE_CLIENT_EMAIL,
       hasPrivateKey: !!FIREBASE_PRIVATE_KEY,
-      rawKeyLen: RAW_KEY.length,
-      processedKeyLen: FIREBASE_PRIVATE_KEY.length,
     });
     return null;
   }
@@ -66,12 +82,12 @@ async function getAccessToken(): Promise<string | null> {
     const key = await crypto.subtle.importKey(
       "pkcs8",
       derBuffer,
-      { name: "RSA-PKCS1-v1_5", hash: "SHA-256" },
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
       false,
       ["sign"]
     );
 
-    const sigBuf = await crypto.subtle.sign("RSA-PKCS1-v1_5", key, new TextEncoder().encode(dataToSign));
+    const sigBuf = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(dataToSign));
     const sigB64 = base64url(new Uint8Array(sigBuf));
 
     const jwt = `${headerB64}.${payloadB64}.${sigB64}`;
@@ -87,17 +103,33 @@ async function getAccessToken(): Promise<string | null> {
       console.error("Google token exchange failed:", JSON.stringify(tokenData));
       return null;
     }
-    return tokenData.access_token;
+
+    // Cache for ~55 minutes (token valid for 60)
+    cachedAccessToken = tokenData.access_token;
+    cachedTokenExpiresAt = now * 1000 + (tokenData.expires_in || 3600) * 1000;
+
+    return cachedAccessToken;
   } catch (err) {
     console.error("getAccessToken error:", String(err));
     return null;
   }
 }
 
-async function sendFCM(targetToken: string, title: string, msgBody: string, data: Record<string, string> = {}): Promise<boolean> {
-  const accessToken = await getAccessToken();
-  if (!accessToken) return false;
+// --- FCM send ---
 
+interface FcmResult {
+  token: string;
+  status: "ok" | "invalid_token" | "error";
+  error?: string;
+}
+
+async function sendFCM(
+  targetToken: string,
+  title: string,
+  msgBody: string,
+  data: Record<string, string>,
+  accessToken: string
+): Promise<FcmResult> {
   const res = await fetch(
     `https://fcm.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/messages:send`,
     {
@@ -129,7 +161,7 @@ async function sendFCM(targetToken: string, title: string, msgBody: string, data
           },
           webpush: {
             headers: { TTL: "86400", Urgency: "high" },
-            notification: { title, body: msgBody, icon: "/icons/icon-192.svg", badge: "/icons/icon-192.svg" },
+            notification: { title, body: msgBody, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png" },
           },
           apns: {
             headers: { "apns-priority": "10" },
@@ -145,14 +177,59 @@ async function sendFCM(targetToken: string, title: string, msgBody: string, data
       }),
     }
   );
+
   const result = await res.json();
-  if (!res.ok) console.error("FCM send error:", JSON.stringify(result));
-  return res.ok;
+
+  if (res.ok) {
+    return { token: targetToken, status: "ok" };
+  }
+
+  const errorCode = result?.error?.status || "";
+  const details = result?.error?.details?.[0]?.errorCode || "";
+
+  if (errorCode === "NOT_FOUND" || details === "UNREGISTERED" || errorCode === "INVALID_ARGUMENT") {
+    return { token: targetToken, status: "invalid_token", error: errorCode };
+  }
+
+  console.error("FCM send error:", JSON.stringify(result));
+  return { token: targetToken, status: "error", error: errorCode || JSON.stringify(result) };
 }
+
+// --- Token cleanup ---
+
+async function cleanupInvalidTokens(invalidTokens: string[]) {
+  if (invalidTokens.length === 0 || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
+
+  try {
+    const headers = {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+    };
+
+    for (const token of invalidTokens) {
+      // Delete from push_tokens
+      await fetch(`${SUPABASE_URL}/rest/v1/push_tokens?token=eq.${encodeURIComponent(token)}`, {
+        method: "DELETE",
+        headers,
+      });
+      // Clear from profiles.fcm_token
+      await fetch(`${SUPABASE_URL}/rest/v1/profiles?fcm_token=eq.${encodeURIComponent(token)}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ fcm_token: null }),
+      });
+    }
+    console.log(`Cleaned ${invalidTokens.length} invalid tokens`);
+  } catch (err) {
+    console.error("cleanup error:", String(err));
+  }
+}
+
+// --- Main handler ---
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
@@ -160,29 +237,69 @@ Deno.serve(async (req) => {
   let reqBody: any;
   try { reqBody = await req.json(); } catch { reqBody = {}; }
 
-  const { token, tokens, title, body: msgBody, url, tag } = reqBody;
+  // Support both flat and wrapped body formats
+  const {
+    token,
+    tokens,
+    title: flatTitle,
+    body: flatBody,
+    url: flatUrl,
+    tag: flatTag,
+    notification,
+    data: reqData,
+  } = reqBody;
+
+  const title = flatTitle || notification?.title || "";
+  const msgBody = flatBody || notification?.body || "";
 
   if (!title || !msgBody) {
-    return new Response(JSON.stringify({ error: "title y body son requeridos" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: "title y body son requeridos" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
-  const data = { url: url || "/", tag: tag || "conjuntos-notification" };
+  const data = { url: reqData?.url || flatUrl || "/", tag: reqData?.tag || flatTag || "conjuntos-notification" };
   const targetTokens: string[] = tokens || (token ? [token] : []);
 
   if (targetTokens.length === 0) {
-    return new Response(JSON.stringify({ error: "No hay tokens para enviar" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: "No hay tokens para enviar" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const accessToken = await getAccessToken();
+  if (!accessToken) {
+    return new Response(JSON.stringify({ error: "No se pudo obtener access token de Firebase" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   let sent = 0;
   let failed = 0;
+  const invalidTokens: string[] = [];
 
+  // Process sequentially to respect FCM rate limits
   for (const t of targetTokens) {
-    const ok = await sendFCM(t, title, msgBody, data);
-    if (ok) sent++;
-    else failed++;
+    const result = await sendFCM(t, title, msgBody, data, accessToken);
+    if (result.status === "ok") {
+      sent++;
+    } else {
+      failed++;
+      if (result.status === "invalid_token") {
+        invalidTokens.push(t);
+      }
+    }
   }
 
-  return new Response(JSON.stringify({ sent, failed, total: targetTokens.length }), {
+  // Cleanup invalid tokens in background (don't block response)
+  if (invalidTokens.length > 0) {
+    cleanupInvalidTokens(invalidTokens).catch(() => {});
+  }
+
+  return new Response(JSON.stringify({ sent, failed, total: targetTokens.length, cleaned: invalidTokens.length }), {
     status: 200,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
