@@ -4,24 +4,36 @@ import {
   requestNativeToken,
   registerNativeSilently,
   onNativePushEvents,
+  checkNativePermissions,
 } from './capacitorNotifications';
 import { supabase } from './supabaseClient';
 import { playNotificationBeep } from './sound';
 
 let unregister: (() => void) | null = null;
+let autoPromptDoneKey = 'push_auto_prompt_done_v1';
+let autoPromptScheduled = false;
 
 const deviceFlagKey = (authUserId: string) => `push_device_token_${authUserId}`;
 
 export type PushStatus = 'unsupported' | 'denied' | 'needs-enable' | 'ready';
 
 /**
- * Estado de push para ESTE dispositivo (no global del usuario).
+ * Estado de push para ESTE dispositivo. En APK NUNCA usa localStorage
+ * como fuente de verdad: siempre consulta el estado real de Android.
  */
-export function getPushStatus(authUserId?: string | null): PushStatus {
+export async function getPushStatus(authUserId?: string | null): Promise<PushStatus> {
   if (isNative()) {
-    // En APK no hay serviceWorker web; el estado lo define el token guardado.
-    if (authUserId && !localStorage.getItem(deviceFlagKey(authUserId))) return 'needs-enable';
-    return 'ready';
+    const status = await checkNativePermissions();
+    if (status === 'denied') return 'denied';
+    if (status === 'granted') {
+      if (authUserId && !localStorage.getItem(deviceFlagKey(authUserId))) {
+        // Permiso otorgado pero token sin registrar: aún necesita enable
+        // (se intentará registrar en silencio en initPushNotifications)
+        return 'needs-enable';
+      }
+      return 'ready';
+    }
+    return 'needs-enable';
   }
   if (!isPushSupported()) return 'unsupported';
   if (typeof Notification === 'undefined') return 'unsupported';
@@ -46,7 +58,6 @@ function deviceLabel(): string {
 }
 
 async function saveDeviceToken(authUserId: string, token: string) {
-  // Token multi-dispositivo (tabla push_tokens) + legacy (profiles.fcm_token)
   try {
     await supabase.from('push_tokens').upsert(
       { auth_user_id: authUserId, token, device_label: deviceLabel(), updated_at: new Date().toISOString() },
@@ -66,16 +77,18 @@ async function saveDeviceToken(authUserId: string, token: string) {
 /**
  * Después del login: solo guarda el token si el permiso ya fue otorgado.
  * NO pide permiso web (en móvil requiere gesto del usuario).
- * En APK nativa registra en silencio (sin diálogo si ya fue otorgado).
+ * En APK nativa registra en silencio SI el permiso ya está otorgado.
  */
 export async function initPushNotifications(userId: string): Promise<boolean> {
   try {
     if (isNative()) {
       startForegroundListener();
-      registerNativeSilently((token) => {
+      const registered = await registerNativeSilently((token) => {
         saveDeviceToken(userId, token).catch(() => {});
       });
-      return true;
+      // Programa auto-pedido de permiso tipo WhatsApp (3s después del login)
+      scheduleAutoPrompt(userId);
+      return registered;
     }
 
     if (!isPushSupported() || !isPushGranted()) return false;
@@ -90,6 +103,42 @@ export async function initPushNotifications(userId: string): Promise<boolean> {
     console.error('initPushNotifications error:', err);
     return false;
   }
+}
+
+/**
+ * WhatsApp-style: pide permiso automáticamente unos segundos después
+ * del login. No rompe el flujo; si se niega, el banner sigue ahí.
+ * Solo se ejecuta UNA vez por sesión de login.
+ */
+function scheduleAutoPrompt(userId: string) {
+  if (autoPromptScheduled) return;
+  autoPromptScheduled = true;
+  const runOnceFlag = `${autoPromptDoneKey}_${userId}`;
+  try {
+    if (sessionStorage.getItem(runOnceFlag)) return;
+  } catch {}
+
+  setTimeout(async () => {
+    try {
+      const st = await getPushStatus(userId);
+      if (st !== 'needs-enable') return;
+
+      if (isNative()) {
+        const perm = await checkNativePermissions(true);
+        if (perm === 'prompt') {
+          const token = await requestNativeToken();
+          if (token) await saveDeviceToken(userId, token);
+        }
+      } else if (isPushSupported() && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+        const token = await requestPushPermission();
+        if (token) await saveDeviceToken(userId, token);
+      }
+    } catch (err) {
+      console.error('autoPrompt error:', err);
+    } finally {
+      try { sessionStorage.setItem(runOnceFlag, '1'); } catch {}
+    }
+  }, 2800);
 }
 
 /**
@@ -121,11 +170,9 @@ function startForegroundListener() {
   if (isNative()) {
     onNativePushEvents(
       () => {
-        // App abierta: Realtime ya actualiza la UI, solo suena el beep.
         try { playNotificationBeep(); } catch {}
       },
       (e) => {
-        // Tap en la notificación: abrir la url del evento.
         try {
           if (e.url && e.url !== '/') window.location.assign(e.url);
         } catch {}
@@ -161,6 +208,7 @@ export function cleanupPushNotifications() {
     unregister();
     unregister = null;
   }
+  autoPromptScheduled = false;
   try {
     Object.keys(localStorage)
       .filter((k) => k.startsWith('push_device_token_'))
@@ -176,9 +224,7 @@ async function collectTokensForProfiles(profileIds: string[]): Promise<string[]>
       .select('id, auth_user_id, fcm_token')
       .in('id', profileIds);
     const list = profiles || [];
-    // Legacy: fcm_token directo en profiles
     list.forEach((p: any) => { if (p?.fcm_token) tokens.add(p.fcm_token); });
-    // Multi-dispositivo: tabla push_tokens
     const authIds = [...new Set(list.map((p: any) => p?.auth_user_id).filter(Boolean))];
     if (authIds.length > 0) {
       const { data: rows } = await supabase

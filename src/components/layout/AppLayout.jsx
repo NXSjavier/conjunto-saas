@@ -109,26 +109,38 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
   const [pushLoading, setPushLoading] = useState(false);
   const [pushTesting, setPushTesting] = useState(false);
 
-  // Estado de push para ESTE dispositivo. Si el permiso ya está otorgado pero
-  // este dispositivo aún no tiene token, se registra en silencio.
+  const refreshPushStatus = async (authId) => {
+    if (!authId) { setPushStatus('checking'); return; }
+    // Primero inicializa: si el permiso ya estaba otorgado, registra el token en silencio.
+    await initPushNotifications(authId).catch(() => {});
+    const s = await getPushStatus(authId).catch(() => 'needs-enable');
+    setPushStatus(s);
+  };
+
   useEffect(() => {
     const authId = currentUser?.auth_user_id;
-    const check = async () => {
-      let s = getPushStatus(authId);
-      if (s === 'ready' && authId) {
-        const ok = await initPushNotifications(authId).catch(() => false);
-        if (ok) s = getPushStatus(authId);
-      }
-      setPushStatus(s);
-    };
-    check();
+    let cancelled = false;
+    refreshPushStatus(authId);
+
+    // Después del auto-prompt de ~3s, refrescar el estado para
+    // que el banner/botón reflejen la decisión del usuario.
+    const timer = setTimeout(() => {
+      if (!cancelled) refreshPushStatus(authId);
+    }, 8000);
+
+    // Y un último refresco para PWA/otras situaciones.
+    const timer2 = setTimeout(() => {
+      if (!cancelled) refreshPushStatus(authId);
+    }, 15000);
+
+    return () => { cancelled = true; clearTimeout(timer); clearTimeout(timer2); };
   }, [currentUser?.auth_user_id]);
 
   const handleEnablePush = async () => {
     if (!currentUser?.auth_user_id) return;
     setPushLoading(true);
     const ok = await enablePushFromGesture(currentUser.auth_user_id).catch(() => false);
-    setPushStatus(getPushStatus(currentUser.auth_user_id));
+    await refreshPushStatus(currentUser.auth_user_id);
     setPushLoading(false);
     return ok;
   };
@@ -260,9 +272,13 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
           </button>
         )}
         {pushStatus === 'denied' && (
-          <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-            Notificaciones bloqueadas. Actívalas en los ajustes del navegador para este sitio.
-          </p>
+          <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 space-y-1">
+            <p className="font-semibold">Notificaciones bloqueadas</p>
+            <p>
+              Ve a <span className="font-bold">Ajustes de Android → Aplicaciones → Conjuntos App → Notificaciones</span> y actívalas.
+              Luego cierra y vuelve a abrir la app.
+            </p>
+          </div>
         )}
         {pushStatus === 'ready' && (
           <button
@@ -419,9 +435,15 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
           )}
           {pushStatus === 'denied' && (
             <div className="mb-4 flex items-center gap-3 p-3 sm:p-4 rounded-2xl bg-amber-50 border border-amber-200 shadow-sm">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+                <Bell className="w-5 h-5 text-amber-600" />
+              </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-amber-900">Notificaciones bloqueadas en este dispositivo</p>
-                <p className="text-xs text-amber-700">En Chrome: toca el candado al lado de la dirección → Permisos → Notificaciones → Permitir.</p>
+                <p className="text-sm font-semibold text-amber-900">Notificaciones bloqueadas</p>
+                <p className="text-xs text-amber-700">
+                  Abre <b>Ajustes de Android → Aplicaciones → Conjuntos App → Notificaciones</b> y <b>Permitir notificaciones</b>.
+                  Luego cierra y vuelve a abrir la app.
+                </p>
               </div>
             </div>
           )}

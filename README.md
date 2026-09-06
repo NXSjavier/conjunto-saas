@@ -1,300 +1,536 @@
 # Conjuntos App
 
-Sistema SaaS para administrar conjuntos residenciales desde web y Android. Usa Supabase como fuente de datos y autenticacion, React/Vite para la interfaz, Firebase Cloud Messaging para notificaciones push y Capacitor para la APK.
+Sistema SaaS integral de gestión residencial multi-tenant (multi-conjunto)
+con Web, **PWA instalable** en celulares y **APK Android nativa**.
+Stack: **React + Vite** (frontend), **Supabase** (PostgreSQL + Auth + RLS + Realtime),
+**Firebase Cloud Messaging (FCM)** (notificaciones push estilo WhatsApp) y
+**Capacitor 8** (empaquetado Android).
 
-## Estado del proyecto
+---
 
-- PWA publicada: `https://conjuntos-app-pwa.vercel.app`.
-- Web: compila con `npm run build`.
-- Android: compila con Java 21 y genera `android/app/build/outputs/apk/debug/app-debug.apk`.
-- Base de datos: Supabase PostgreSQL.
-- Realtime: Supabase Realtime en web y movil; WebSocket Express queda como respaldo web.
-- Push: Firebase Cloud Messaging via Edge Function `send-push` + tabla `push_tokens` (multi-dispositivo).
-- Responsive: layout movil (sidebar drawer, bottom nav, tablas con scroll horizontal, grids colapsables).
-- Seguridad: aplicar `supabase-auth-secure-migration.sql` antes de usar datos reales.
-- No usar `supabase-standalone-fix.sql`: sus politicas abiertas permiten que cualquier cliente anonimo modifique la base.
+## 🌐 URLs Públicas
 
-## Arquitectura
+- **PWA + Web**: <https://conjuntos-app-pwa.vercel.app>
+- **APK Android (debug)**: `android/app/build/outputs/apk/debug/app-debug.apk`
+  - Se genera localmente (ve la sección *Capacitor / APK Android*).
 
-La aplicacion tiene dos modos:
+---
 
-1. **Web con backend**: el frontend usa las rutas Express para operaciones de negocio y el backend usa `SUPABASE_SERVICE_ROLE_KEY` solo en el servidor.
-2. **Android/PWA standalone**: el frontend lee y escribe en Supabase usando `VITE_SUPABASE_ANON_KEY`. Las RLS identifican al usuario mediante Supabase Auth.
+## 🏗️ Arquitectura
 
-La PWA publicada no necesita el backend local ni una IP de tu computadora. Cuando no existe `VITE_API_BASE_URL`, el navegador usa el mismo modo directo a Supabase que Android.
+### Dos clientes, una misma base de datos
 
-Las reglas sensibles, especialmente reservas, limites de plan, aprobaciones y cambios administrativos, deben mantenerse en backend o en funciones RPC protegidas. Nunca se debe incluir `SUPABASE_SERVICE_ROLE_KEY` en Vite, Capacitor, `dist` o la APK.
+| Cliente | Cómo funciona | Actualizaciones automáticas |
+|---------|---------------|------------------------------|
+| **PWA / Web** (Chrome / Safari / Edge) | Frontend React + Service Worker. Conexión directa a Supabase con `VITE_SUPABASE_ANON_KEY`. | **Sí**, por `serviceWorker` + despliegue Vercel. |
+| **APK Android / Capacitor** | Mismo frontend React empaquetado en un `WebView` Android nativo. Usa **Capacitor Live Server** que apunta **al dominio de Vercel**, NO a los assets locales. | **Sí**, al abrir la APK lee los últimos cambios de Vercel. Solo hay que recompilar APK si cambias código nativo (AndroidManifest, iconos, plugins). |
+| **Backend Express (opcional)** | `server.ts` con rutas de negocio y WebSocket. Útil si necesitas validaciones que no quieres en Edge Functions. | Despliegue por separado en Render u otro hosting. |
 
-## Inicio rapido
+### Reglas de seguridad (IMPORTANTE)
 
-Instala dependencias:
+- **NUNCA pongas `SUPABASE_SERVICE_ROLE_KEY` en código del frontend / `dist` / APK.**
+- **Solo el `VITE_SUPABASE_ANON_KEY` va en el cliente.**
+- Las validaciones sensibles (límites de planes, aprobación de pagos, auditoría) deben hacerse en **Edge Functions de Supabase** (recomendado) o en el backend Express (con `SUPABASE_SERVICE_ROLE_KEY`).
+- RLS (Row Level Security) está en `supabase-auth-secure-migration.sql`.
+
+### Diagrama de una notificación push
+
+```
+  Evento en Supabase (anuncio/reserva/incidente)
+            │
+            ▼
+  DataContext.jsx detecta Realtime INSERT/UPDATE
+            │
+            ▼
+  sendPushToMany(userId[])  ────►  Edge Function  send-push
+  (pushNotifications.ts)          (supabase/functions/send-push/index.ts)
+                                          │
+                                          ▼
+                                 FCM HTTP v1 API  (priority: high Android)
+                                          │
+                    ┌─────────────────────┴────────────────────┐
+                    ▼                                          ▼
+          Service Worker FCM                        Plugin @capacitor/push-notifications
+          (PWA, app cerrada / 2do plano)             (APK Android, app cerrada)
+                    │                                          │
+                    ▼                                          ▼
+           showNotification()                         NotificationManager.MAX
+          (barra superior, heads-up)                (barra superior, canal importancia HIGH)
+```
+
+---
+
+## 👥 Roles y permisos
+
+| Rol | Acceso |
+|-----|--------|
+| **Super Admin** | Conjuntos residenciales, planes, administradores, auditoría global. |
+| **Admin / Administrador** | Su conjunto: residentes, apartamentos, guardas, anuncios, incidencias, reservas, visitantes. |
+| **Resident** | Su apartamento: reservas, pases de visita, reportar incidencias, ver anuncios. |
+| **Guard (Guarda de seguridad)** | Validar visitantes, control de acceso del conjunto. |
+
+---
+
+## 🚀 Inicio rápido (desarrollo local)
+
+### Requisitos
+
+- Node.js **20+**
+- [Supabase CLI](https://supabase.com/docs/guides/cli) (opcional, para desplegar Edge Functions)
+- **Java 17 o 21** (solo para compilar la APK)
+- Cuentas: Supabase + Firebase + Vercel (todas tienen tier gratuitas)
+
+### 1. Instalar dependencias
 
 ```powershell
 npm install
 ```
 
-Crea `.env` local, ignorado por Git:
+### 2. Crear archivo `.env`
+
+Copía `.env.example` a `.env` y rellena:
 
 ```env
-SUPABASE_URL=https://tu-proyecto.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=clave-solo-para-backend
-VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
-VITE_SUPABASE_ANON_KEY=clave-publica-anon
-VITE_API_BASE_URL=https://tu-backend-publico.com
-VITE_WS_BASE_URL=wss://tu-backend-publico.com
-CAPACITOR_API_URL=https://tu-backend-publico.com
-VITE_FIREBASE_API_KEY=clave-web-de-firebase
-VITE_FIREBASE_PROJECT_ID=tu-project-id
-VITE_FIREBASE_MESSAGING_SENDER_ID=tu-sender-id
-VITE_FIREBASE_APP_ID=tu-app-id
-VITE_FIREBASE_VAPID_KEY=tu-vapid-key
+# ===== Supabase =====
+SUPABASE_URL=https://TU-PROYECTO.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...SERVICE_ROLE... (solo backend local)
+VITE_SUPABASE_URL=https://TU-PROYECTO.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGci...ANON_KEY... (pública, OK en frontend)
+
+# ===== (Opcional) Backend Express =====
+# VITE_API_BASE_URL=https://tu-backend.onrender.com
+# VITE_WS_BASE_URL=wss://tu-backend.onrender.com
+# CAPACITOR_API_URL=https://tu-backend.onrender.com
+
+# ===== Firebase Cloud Messaging =====
+VITE_FIREBASE_API_KEY=AIza... (Firebase Console → Project Settings → Apps)
+VITE_FIREBASE_PROJECT_ID=conjuntos-app-XXXXX
+VITE_FIREBASE_MESSAGING_SENDER_ID=123456789012
+VITE_FIREBASE_APP_ID=1:123456...
+VITE_FIREBASE_VAPID_KEY=AAAAXXXXX... (Web Push certificates → Key pair)
 ```
 
-Desarrollo web:
+### 3. Levantar la web localmente
 
 ```powershell
 npm run dev
 ```
 
-Produccion web:
+→ Abre <http://localhost:5173>
+
+### 4. Build de producción
 
 ```powershell
 npm run build
-npm run start
+# → carpeta dist/ (Vercel despliega esta carpeta)
 ```
 
-## Base de datos y autenticacion
+---
 
-Para una base nueva:
+## 🗄️ Base de datos (Supabase)
 
-1. Ejecuta `supabase-migration.sql` en el SQL Editor.
-2. Verifica que exista el usuario inicial en Supabase Auth.
-3. Ejecuta `supabase-auth-secure-migration.sql`.
-4. Confirma que `profiles.auth_user_id` quedo vinculado al usuario de `auth.users`.
-5. No ejecutes scripts de RLS antiguos despues de la migracion segura.
+Scripts SQL (raíz del proyecto):
 
-La migracion segura:
+| Archivo | Propósito | Cuándo ejecutar |
+|---------|-----------|-----------------|
+| `supabase-migration.sql` | Esquema inicial (tablas, funciones básicas). | 1 vez, al crear el proyecto. |
+| `supabase-auth-secure-migration.sql` | ⭐ Vincula `profiles.auth_user_id` → `auth.users`, **agrega RLS seguro**. | **Justo después** del script anterior. |
+| `supabase-push-tokens.sql` | Crea la tabla `push_tokens` (multi-dispositivo). | 1 vez, antes de usar notificaciones. |
+| `supabase-auth-trigger-fix.sql` | Repara triggers duplicados de `auth.users` que rompen el alta de usuarios. | Si `admin-create` o `guard-create` fallan con *Database error*. |
 
-- agrega `profiles.auth_user_id` como referencia a `auth.users`;
-- vincula perfiles existentes por correo;
-- elimina la obligatoriedad de `profiles.password` y deja de usarla;
-- crea funciones seguras para obtener perfil, rol y conjunto actual;
-- elimina politicas antiguas y crea politicas por usuario, rol y conjunto;
-- mantiene Realtime.
+### Orden obligatorio de migración
 
-La clave `anon` puede estar en el frontend. La clave `service_role` solo debe existir en `.env` del backend o en variables secretas del hosting.
+```sql
+-- 1. En SQL Editor (Supabase)
+supabase-migration.sql            → ejecutar
+supabase-auth-secure-migration.sql → ejecutar
+supabase-push-tokens.sql          → ejecutar
+-- (solo si falla el alta) supabase-auth-trigger-fix.sql
+```
 
-## Roles y modulos
+### Tablas principales
 
-- `super_admin`: administra conjuntos, planes, administradores y auditoria.
-- `admin`: gestiona residentes, apartamentos, guardas, anuncios, incidencias, reservas y visitantes de su conjunto.
-- `resident`: consulta su apartamento, solicita reservas, crea pases y reporta incidencias.
-- `guard`: valida visitantes y gestiona el control de acceso.
+```
+residential_complexes ──► apartments ──► residents_in_apartments
+           │                  │
+           ▼                  ▼
+     profiles (users)   bookings / reservations
+           │
+ announcements ──► announcement_comments
+ incidents      visitors        audit_logs
+ notifications  push_tokens
+```
 
-Tablas principales: `residential_complexes`, `profiles`, `apartments`, `visitors`, `announcements`, `announcement_comments`, `incidents`, `reservations`, `notifications`, `push_tokens` y `audit_logs`.
+---
 
-## Notificaciones push (FCM)
+## 🔔 Notificaciones push (Estilo WhatsApp)
 
-Flujo: evento Realtime en `DataContext.jsx` → `sendPushToMany`/`sendPushToUser` (`src/lib/pushNotifications.ts`) → Edge Function `send-push` → FCM HTTP v1 API → celular del usuario (incluso con la app cerrada, via `public/firebase-messaging-sw.js`).
+El objetivo: que llegue en **primer plano, segundo plano y con la APP TOTALMENTE CERRADA**, exactamente igual que WhatsApp.
 
-Migracion requerida (una vez por proyecto): ejecutar `supabase-push-tokens.sql` en el SQL Editor. Crea la tabla `push_tokens` con RLS (lectura autenticada, escritura solo del propio `auth.uid()`).
+### ¿Cómo se consigue?
 
-Variables necesarias:
+La clave está en **2 ajustes combados**:
 
-- En Vercel (frontend): `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`, `VITE_FIREBASE_VAPID_KEY`.
-- En Supabase Edge Function `send-push` (secrets): `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (service account JSON de Firebase Console → Project Settings → Service accounts).
-- En Firebase Console → Project Settings → Cloud Messaging: habilitar **Firebase Cloud Messaging API (V1)**.
+1. **El mensaje FCM enviado por el servidor (Edge Function) debe tener `priority: high` (Android).**
+   Android en modo Doze (ahorro de batería) POSTERGA los mensajes `priority: normal` hasta que el celular se despierte.
+   Con `priority: high`, FCM despierta al teléfono y entrega el mensaje inmediatamente.
 
-En el movil, `Notification.requestPermission()` solo funciona con un toque del usuario. Por eso la app NO pide permiso automaticamente al login: muestra un banner verde con boton **Activar** (y un boton **Activar Notificaciones** en el sidebar). Cuando el permiso ya esta otorgado aparece **Notificaciones activas · Probar** para enviar una push de prueba real al dispositivo.
+2. **El dispositivo tiene un canal/permiso de IMPORTANCIA_ALTA / MÁXIMA** (para APK)
+   o el Service Worker (para PWA) con `onBackgroundMessage`.
 
-### Error conocido (corregido): las push solo llegaban a la PC
+### 1. Configurar Firebase (una vez)
 
-Causa: `profiles.fcm_token` guardaba UN solo token por usuario. Cada login en la PC sobrescribia el token del celular, y el celular dejaba de recibir.
-
-Solucion aplicada:
-
-1. Tabla `push_tokens`: un registro por dispositivo (`auth_user_id`, `token` unico, `device_label`).
-2. Los envios consultan `push_tokens` (+ `profiles.fcm_token` como fallback) y mandan a TODOS los dispositivos.
-3. El banner ahora depende del estado de ESTE dispositivo (`localStorage`), no del permiso global: si el permiso ya estaba otorgado pero el dispositivo no tiene token, se registra en silencio al abrir la app.
-
-### Protocolo a seguir tras CADA modificación (Para notificaciones PWA y Google FCM)
-
-Cada vez que realices cambios en la aplicación y quieras que funcionen las notificaciones Push en segundo plano y con la app cerrada en PWA y Google:
-
-1. **Compilar y Verificar localmente**:
-   ```powershell
-   npm run build
+1. Firebase Console → **Create project** (o usa uno existente).
+2. Project Settings → **Your apps → Add app → Web app** → copia la config a tu `.env`.
+3. Project Settings → **Cloud Messaging**:
+   - Habilitar **Firebase Cloud Messaging API (V1)** (este es el que usa la Edge Function).
+   - Genera **Web Push certificates (Key pair)** → copia la *key* a `VITE_FIREBASE_VAPID_KEY`.
+4. Project Settings → **Service accounts → Generate new private key** (JSON).
+   De este JSON, debes crear **3 Secrets en Supabase → Edge Functions**:
    ```
-2. **Subir los cambios a GitHub**:
-   ```powershell
-   git add .
-   git commit -m "feat: descripcion del cambio"
-   git push origin main
+   FIREBASE_PROJECT_ID   = tu-project-id
+   FIREBASE_CLIENT_EMAIL = firebase-adminsdk@...iam.gserviceaccount.com
+   FIREBASE_PRIVATE_KEY  = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
    ```
-3. **Desplegar a producción en Vercel**:
+   Para establecerlos localmente:
    ```powershell
-   npx vercel --prod --yes
+   supabase secrets set FIREBASE_PROJECT_ID=tu-project-id
+   supabase secrets set FIREBASE_CLIENT_EMAIL=...
+   supabase secrets set --env-file .env
+   # (o pon FIREBASE_PRIVATE_KEY en un archivo y léelo)
    ```
-4. **Actualización Automática en Celulares de Usuarios**:
-   - La PWA automáticamente desregistrará cualquier Service Worker anterior (`/sw.js`) e instalará el Service Worker unificado (`/firebase-messaging-sw.js`).
-   - Al volver a abrir la PWA instalada en la pantalla de inicio, si el dispositivo aún no ha guardado su token FCM, aparecerá un **banner verde superior** *"Recibe notificaciones en tu celular"*. El usuario solo debe tocar **Activar** una vez.
-   - En Android, asegúrate de que el archivo `public/manifest.webmanifest` mantenga `"gcm_sender_id": "103953800507"`, `"id": "/"` y `"scope": "/"`.
 
-Si un celular no recibe push tras una actualización:
+### 2. Desplegar la Edge Function `send-push`
 
-1. Abrir la PWA instalada y verificar si aparece el banner verde → tocar **Activar**.
-2. Si aparece el banner amarillo (bloqueadas): en los ajustes de la PWA/navegador → Permisos → Notificaciones → Permitir.
-3. Deslizar hacia abajo en la app para recargar (Pull to refresh) para forzar la sincronización del token.
-4. Confirmar en la tabla `push_tokens` de Supabase que existe un registro para ese usuario con el dispositivo etiquetado (`pwa-instalada` o `movil`).
-
-
-## Responsive movil
-
-Patrones aplicados en las vistas `.jsx` (las que se despliegan; `index.html` carga `main.jsx`):
-
-- Sidebar como drawer lateral + bottom nav en `< lg`; sidebar fijo en desktop.
-- Grids colapsables (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-4`); el calendario de reservas usa siempre 7 columnas.
-- Tablas de datos con `overflow-x-auto` + `min-w-[...]` para scroll horizontal en vez de aplastar columnas.
-- Barra superior movil: el titulo se oculta bajo 420px para no desbordar en pantallas de 320px.
-- Modales con `p-4`, `w-full` y `overflow-y-auto`.
-
-## Android & Capacitor (Opción 1: Servidor Vercel Live OTA)
-
-La APK de Android está configurada con **Capacitor Live Server** apuntando a `https://conjuntos-app-pwa.vercel.app` en `capacitor.config.ts`.
-
-### ¿Cómo funcionan las actualizaciones en la APK?
-- **Cambios de Interfaz, Colores, Lógica React y Notificaciones**: Cada vez que ejecutas `npx vercel --prod --yes`, los cambios **se reflejan de inmediato dentro de la APK instalada en los celulares**, sin necesidad de reinstalar o compilar la APK de nuevo.
-- **Cambios Nativos de Android** (iconos nativos, permisos del manifest, plugins): Requieren compilar una nueva APK.
-
-### Push nativo en la APK (requerido, una vez por PC que compile)
-
-Sin este archivo el plugin `@capacitor/push-notifications` no funciona (el build lo avisa: *"google-services.json not found... Push Notifications won't work"*).
-
-1. En Firebase Console → Project Settings → Your apps → **Add app** → Android.
-2. Package name: `com.conjuntos.app` (el `appId` de `capacitor.config.ts`).
-3. Descarga `google-services.json` y colócalo en `android/app/google-services.json` (está en `.gitignore`, no se sube al repo).
-4. Recompila la APK. Al abrirla e iniciar sesión, el banner **Activar** pide el permiso del sistema y guarda el token con etiqueta `apk-android` en `push_tokens`.
-
-El código JS del puente vive en `src/lib/capacitorNotifications.ts` (permiso, token, listeners de tap) y se usa desde `src/lib/pushNotifications.ts` cuando `Capacitor.isNativePlatform()` es true. En web/PWA se usa el flujo FCM web sin cambios.
-
-### Compilar la APK Debug:
-En Windows con PowerShell:
+Cada vez que modifiques `supabase/functions/send-push/index.ts`:
 
 ```powershell
-$env:JAVA_HOME = "C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot"
+supabase functions deploy send-push --project-ref TU-PROYECTO
+```
+
+> ⚠️ Sin este paso, las push seguirán enviándose con prioridad normal y Android las retrasará.
+
+### 3. Flujo en el cliente (PWA / APK)
+
+1. Usuario inicia sesión.
+2. **~3 segundos después se dispara el auto-prompt estilo WhatsApp**
+   (si la plataforma lo permite). En APK abre el **diálogo NATIVO de Android**
+   "¿Permitir notificaciones?". En PWA Chrome abre el diálogo del navegador.
+3. Si el usuario *no* acepta, se muestra un **banner verde "Recibe notificaciones · Activar"**
+   (y botón idéntico en el sidebar). Este banner *depende de ESTE dispositivo*, no del perfil global.
+4. Al aceptar:
+   - Se llama a `getToken()` de FCM con el **Service Worker registrado** (`firebase-messaging-sw.js`).
+   - El token se guarda en la tabla `push_tokens` con `device_label` (`apk-android`, `pwa-instalada`, `pc`, etc.).
+   - Un usuario puede tener **múltiples tokens activos** (celular + PC + tablet). Los envíos van a TODOS.
+
+### 4. Archivos clave de push
+
+| Ubicación | Qué hace |
+|-----------|----------|
+| [src/lib/pushNotifications.ts](src/lib/pushNotifications.ts) | Orquesta registro multi-dispositivo, guarda token en Supabase, envía `send-push`. |
+| [src/lib/capacitorNotifications.ts](src/lib/capacitorNotifications.ts) | Puente nativo Capacitor: `checkPermissions()`, `requestNativeToken()`, `registerNativeSilently()`. |
+| [src/lib/firebase.ts](src/lib/firebase.ts) | Cliente FCM web: `getToken`, `requestPushPermission`, `onMessage` (foreground). |
+| [public/firebase-messaging-sw.js](public/firebase-messaging-sw.js) | **Service Worker FCM** → `onBackgroundMessage` (PWA app cerrada / 2do plano). Muestra notificación + abre URL correcta al tocar. |
+| [android/app/src/main/java/com/conjuntos/app/MainActivity.java](android/app/src/main/java/com/conjuntos/app/MainActivity.java) | Crea canal de notificaciones `IMPORTANCE_HIGH` (Android 8+) en tiempo de ejecución (estilo WhatsApp: vibración, luces, bypass DND). |
+| [supabase/functions/send-push/index.ts](supabase/functions/send-push/index.ts) | Envía al servidor FCM con `android.priority: high`, `android.notification.priority: MAX`, `webpush.urgency: high`, `apns-priority: 10`. |
+
+### 5. Probar push paso a paso
+
+1. Despliega `send-push` y la PWA en Vercel.
+2. Instala / abre la PWA en tu celular **(Chrome Android)**.
+3. Inicia sesión → acepta el permiso.
+4. Abre el **sidebar lateral** → **Notificaciones activas · Probar**.
+5. En Supabase, tabla `push_tokens`, verifica que exista un registro para ese usuario.
+6. **Cierra TOTALMENTE Chrome / la PWA** (deslízala de recientes).
+7. Desde otro dispositivo (PC) o sesión incógnita → envía otra push de prueba (botón Probar o crea un anuncio/reserva).
+8. ✅ Debe llegar en la barra superior del celular aunque la app esté cerrada.
+
+---
+
+## 📱 Capacitor / APK Android
+
+### 🧠 Concepto clave: Live Server (OTA automático)
+
+En [capacitor.config.ts](capacitor.config.ts):
+
+```ts
+server: {
+  url: 'https://conjuntos-app-pwa.vercel.app',
+  cleartext: true,
+  allowNavigation: ['*'],
+}
+```
+
+Esto significa que **la APK NO abre `assets/public/index.html` local**, sino que carga
+el dominio de Vercel directamente dentro del `WebView` nativo de Android.
+
+Consecuencias (muy útiles):
+
+| Tipo de cambio | ¿Requiere recompilar APK? |
+|----------------|---------------------------|
+| React, componentes, texto, colores, lógica TS/JS | ❌ No → solo sube a Vercel, cierra y abre la APK |
+| Archivos de `public/` (manifest, SW, íconos SVG/PNG) | ❌ No (mismos assets son servidos por Vercel) |
+| Supabase Edge Functions / RLS / Base de datos | ❌ No |
+| `AndroidManifest.xml` (permisos, servicio FCM) | ✅ Sí → nueva APK |
+| `MainActivity.java` (canal de notificaciones) | ✅ Sí |
+| Plugins nativos (ej. camera, local auth) | ✅ Sí |
+| Ícono launcher nativo de la APK (`mipmap-*`) | ✅ Sí |
+| `google-services.json` (FCM nativo) | ✅ Sí (colocado una sola vez) |
+
+### 1. Requisitos (solo para compilar APK)
+
+- **Java 17+** (JDK) → Java 21 es el recomendado por Capacitor 8.
+  En Windows PowerShell:
+  ```powershell
+  $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.4.7-hotspot"
+  $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+  java -version
+  ```
+- `google-services.json` (obligatorio para FCM nativo)
+
+### 2. Agregar `google-services.json` (UNA ÚNICA VEZ)
+
+1. Firebase Console → Project Settings → Your apps → **Add app → Android**
+2. Package name → `com.conjuntos.app` (es el `appId` de `capacitor.config.ts`).
+3. SHA-1 debug (opcional): puedes omitirlo, o si tienes Android Studio:
+   ```powershell
+   keytool -J-Duser.language=en -list -v -alias androiddebugkey -keystore ~/.android/debug.keystore -storepass android -keypass android
+   ```
+4. Descarga `google-services.json`.
+5. Colócalo en:
+   ```
+   android/app/google-services.json
+   ```
+   (Está en `.gitignore`, **no se sube al repositorio**, contiene secrets).
+
+### 3. Build APK Debug
+
+```powershell
+# 1. Build web (si no lo hiciste)
 npm run build
+
+# 2. Copiar dist/ a assets/ del proyecto Android
 npx cap sync android
+
+# 3. Compilar la APK con Gradle
 cd android
 .\gradlew.bat assembleDebug
+
+# → APK: android\app\build\outputs\apk\debug\app-debug.apk
 ```
 
-### Ubicación de la APK resultante:
-```text
-android/app/build/outputs/apk/debug/app-debug.apk
-```
+### 4. Instalar en el celular
 
-### Instalación en dispositivo físico mediante USB:
 ```powershell
+# Opción A) ADB
 adb devices
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+
+# Opción B) Transfiere el APK al celular por USB / WhatsApp / Drive → toca "Instalar"
 ```
 
-## Instalar la PWA en celulares
+Al abrirla:
+1. Inicia sesión.
+2. Espera ~3 segundos → diálogo nativo Android "Permitir notificaciones".
+3. Acepta → token se guarda en `push_tokens` como `apk-android`.
 
-Usa esta direccion publica:
+---
 
-```text
-https://conjuntos-app-pwa.vercel.app
-```
+## 🌐 PWA: Instalar app en pantalla de inicio
 
-En Android, abre el enlace con Chrome, inicia sesion y selecciona **Instalar aplicacion** o **Agregar a pantalla principal**. La PWA aparecera con icono propio y usara Supabase directamente.
+1. En **Chrome Android** abre <https://conjuntos-app-pwa.vercel.app>.
+2. Inicia sesión (primer uso, así registra el push).
+3. Menú de los **3 puntos** arriba a la derecha → **Instalar aplicación** → "Agregar a pantalla de inicio".
+4. Se crea un ícono con nombre *Conjuntos*. Al abrirlo funciona como app nativa (pantalla completa, sin barra de Chrome).
 
-Para publicar cambios visuales:
+### OTA automático en la PWA
+
+El Service Worker `firebase-messaging-sw.js` + `registerPwa()` en [src/pwa.js](src/pwa.js) hacen:
+
+- `skipWaiting()` → nueva versión del SW se activa al instante.
+- `clients.claim()` → todas las ventanas/pestañas usan el SW nuevo sin recargar.
+- Limpia cualquier SW huérfano (`/sw.js`, que existía antes y rompía FCM).
+- Al detectar actualización, si el controlador ya existe, recarga la página una sola vez.
+
+> **Tip si no llegan las push:** Reinstalar la PWA. En Chrome Android →
+> Configuración → Configuración del sitio → Notificaciones →
+> busca `conjuntos-app-pwa.vercel.app` → **Restablecer y borrar**.
+> Luego vuelve a abrir la URL e instala de 0.
+
+---
+
+## 🚀 Despliegues
+
+### 1. Vercel (Web + PWA)
+
+Cada vez que cambies código del frontend:
 
 ```powershell
-npm run build:web
-vercel --prod --yes --name conjuntos-app-pwa
+npm run build
+npx vercel --prod --yes
 ```
 
-Los cambios de React, colores, textos y pantallas se actualizan desde la web sin reinstalar APK. Los cambios nativos de Android, permisos, plugins, icono o Firebase requieren una nueva APK.
+Si es la primera vez: `npx vercel link` → login → nombre `conjuntos-app-pwa` →
+agrega todas las variables `VITE_*` como Project Environment Variables en Vercel Dashboard → Settings → Environment Variables.
 
-El proyecto Vercel queda enlazado localmente mediante `.vercel`, que esta excluido de Git. No subas `.env`, `.env.local` ni claves privadas.
+### 2. Edge Functions Supabase
 
-## Pruebas minimas antes de publicar
-
-- Login y cierre de sesion con un usuario Auth real.
-- Un residente solo ve informacion de su conjunto.
-- Un residente no puede modificar una reserva ajena.
-- Un admin solo administra su conjunto.
-- Una reserva conflictiva es rechazada de forma atomica.
-- Los limites Free, Pro y Enterprise se validan en servidor o RPC.
-- Un cambio de reserva, anuncio o visitante aparece en web y Android mediante Realtime.
-- Un usuario anonimo no puede leer perfiles, reservas, incidencias o notificaciones.
-- No hay `service_role` dentro de `dist`, `android` ni archivos de frontend.
-- Push: tocar **Probar** en el sidebar llega al dispositivo; crear un comunicado desde otro dispositivo llega con el titulo real.
-- Responsive: en 360px no hay scroll horizontal de pagina (las tablas scrollean dentro de su contenedor).
-
-## Diagnostico
-
-Servidor local:
+Cada vez que toques `supabase/functions/`:
 
 ```powershell
-Invoke-WebRequest -Uri http://localhost:3000/api/health -UseBasicParsing
+# Lista de funciones
+supabase functions list
+
+# Desplegar individualmente
+supabase functions deploy send-push
+supabase functions deploy admin-create
+supabase functions deploy guard-create
 ```
 
-Si aparece `EADDRINUSE`, hay otra instancia usando el puerto 3000. Cierra la instancia anterior antes de ejecutar `npm run dev` otra vez.
+`admin-create` y `guard-create` usan `service_role` para crear usuarios Auth directamente
+y luego insertar perfil. Son endpoints seguros (no permiten creación anónima).
 
-Si Gradle muestra `invalid source release: 21`, `JAVA_HOME` apunta a Java 17. Configura Java 21 en la terminal actual y vuelve a compilar.
+### 3. Backend Express en Render (opcional)
 
-## Publicar el backend en Render
+Si quieres las rutas de `server.ts` hosteadas 24/7 sin tu PC encendida:
 
-La PWA publicada en Vercel no ejecuta `server.ts`. Para que las operaciones administrativas y validaciones del backend funcionen sin tu computadora encendida, crea el servicio usando `render.yaml`:
+1. Render → **New → Blueprint** → selecciona tu repo. Detecta `render.yaml`.
+2. Variables Render Dashboard (Environment) → agrega `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`.
+3. Espera a que `/api/health` responda `200`.
+4. Copia la URL de Render a tu `.env` / Vercel como:
+   ```
+   VITE_API_BASE_URL=https://conjuntos-backend.onrender.com
+   VITE_WS_BASE_URL=wss://conjuntos-backend.onrender.com
+   CAPACITOR_API_URL=https://conjuntos-backend.onrender.com
+   ```
+5. Redeploya Vercel (`npx vercel --prod --yes`).
 
-1. En Render selecciona **New + > Blueprint**.
-2. Conecta el repositorio que contiene este proyecto.
-3. Render detectara `render.yaml` y creara `conjuntos-backend`.
-4. En las variables privadas del servicio agrega `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`.
-5. Espera a que `/api/health` responda `200`.
-6. Copia la URL de Render en Vercel como `VITE_API_BASE_URL`.
-7. Publica nuevamente la PWA.
+---
 
-Render puede tener un plan gratuito con suspension por inactividad, segun la cuenta y las condiciones vigentes. Si el servicio se duerme, la primera peticion tarda unos segundos en despertar; Supabase y la PWA siguen siendo servicios separados. El trafico de administradores es bajo, pero el backend tambien atiende las operaciones criticas de reservas, guardas y cuentas.
+## 🧪 Checklist de pruebas pre-publicación
 
-## Guia para continuar con una IA
+- [ ] Login con un usuario real (Supabase Auth)
+- [ ] `super_admin` puede crear conjuntos / administradores
+- [ ] `admin` solo ve a SU conjunto (RLS)
+- [ ] `resident` solo ve su apartamento / sus reservas
+- [ ] Intentar modificar reserva ajena → rechazado (RLS o RPC)
+- [ ] Anuncio creado en Admin aparece en 2do celular (Realtime)
+- [ ] Botón lateral **Probar notificación** llega a la barra superior de AMBOS (PWA + APK)
+- [ ] App totalmente cerrada, push llega (background)
+- [ ] Responsive 360px (celular antiguo): sin overflow horizontal de página; tablas scrollean internas
+- [ ] En `dist/` ni en assets/apk NO aparece la palabra `SUPABASE_SERVICE_ROLE_KEY`
 
-Antes de cambiar codigo, la IA debe:
+---
 
-1. Leer `package.json`, `src/lib/config.js`, `src/lib/supabaseClient.js`, `src/lib/supabaseRepo.js`, `src/context/AuthContext.jsx` y `src/context/DataContext.jsx`.
-2. Comprobar si el cambio afecta web, Android, Supabase Auth, RLS o las validaciones de reservas.
-3. No usar ni pedir claves privadas en el chat. Las claves se leen solo desde `.env` local.
-4. Mantener `service_role` fuera del frontend y de la APK.
-5. Hacer el cambio minimo y ejecutar primero una prueba enfocada.
-6. Ejecutar `npm run build`; si se toca Android, ejecutar tambien `npx cap sync android` y `assembleDebug` con Java 21.
-7. No reemplazar RLS seguras por `USING (true)` ni `WITH CHECK (true)` para tablas de negocio.
-8. Reportar claramente que se verifico, que no se pudo verificar y que accion requiere el usuario en Supabase o en un dispositivo fisico.
+## 🔧 Troubleshooting (FAQ)
 
-## Archivos clave
+### ❌ Las push solo me llegan a Chrome PC, no a la PWA del celular.
 
-- `server.ts`: API Express, reglas de negocio y WebSocket.
-- `server/supabase.js`: cliente backend con service role.
-- `src/lib/supabaseClient.js`: cliente publico para web/movil.
-- `src/lib/supabaseRepo.js`: autenticacion y lecturas directas de Supabase.
-- `src/context/AuthContext.jsx`: sesion y perfil actual.
-- `src/context/DataContext.jsx`: estado, CRUD y sincronizacion Realtime.
-- `src/lib/firebase.ts`: cliente FCM (permiso, token, listener foreground).
-- `src/lib/pushNotifications.ts`: registro multi-dispositivo y envio via Edge Function.
-- `public/firebase-messaging-sw.js`: service worker para push en background.
-- `supabase/functions/send-push/index.ts`: Edge Function que envia via FCM HTTP v1 API.
-- `supabase-push-tokens.sql`: migracion de tabla `push_tokens` + RLS.
-- `supabase-migration.sql`: esquema inicial.
-- `supabase-auth-secure-migration.sql`: migracion segura de Auth y RLS.
-- `supabase-auth-trigger-fix.sql`: diagnostico y reparacion del error de triggers en `auth.users`.
-- `capacitor.config.ts`: configuracion de Android.
+**Diagnóstico + Fix:**
 
-## Seguridad
+1. El Service Worker anterior (`/sw.js`) dejó basura. **Reinstala la PWA desde cero.**
+   - Chrome Android → Configuración → Configuración del sitio → Notificaciones → Restablecer.
+2. Asegúrate de haber desplegado `firebase-messaging-sw.js` (nuevo código con config real)
+   → visita `https://TU-DOMINIO/firebase-messaging-sw.js` y compruébalo.
+3. En Firebase Console, verifica que el `gcm_sender_id` del viejo manifest obsoleto
+   ya no importa (el manifest nuevo no lo usa, pero FCM lo gestiona internamente con la config).
 
-Las claves enviadas por chat, commits o archivos publicos deben revocarse. Una clave `service_role` permite acceso administrativo completo a la base. Para usuarios finales se usa exclusivamente la `anon key` junto con Supabase Auth y RLS.
+### ❌ Gradle falla con `invalid source release: 21`.
 
-Si crear un administrador o guarda devuelve `Database error creating new user`, ejecuta `supabase-auth-trigger-fix.sql` en Supabase SQL Editor. La aplicacion crea el perfil despues de crear el usuario Auth, por lo que un trigger adicional que inserte perfiles puede fallar por columnas obligatorias o duplicar registros.
+Tu `JAVA_HOME` apunta a Java < 17. Cambia la variable de entorno antes del build:
 
-Proyecto privado para uso interno.
+```powershell
+$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.4.7-hotspot"
+```
+
+Este proyecto ya tiene un parche en [android/build.gradle](android/build.gradle) que fuerza
+compatibilidad Java 17 en todos los submódulos (para evitar el error incluso con JDK 17).
+
+### ❌ Al intentar crear un Admin / Guarda, aparece *Database error creating new user*.
+
+Ejecuta **`supabase-auth-trigger-fix.sql`** en el SQL Editor de Supabase.
+Un trigger auto-creado por extensiones intenta insertar `profiles` y rompe el alta
+(la app ya inserta `profiles` en el Edge Function después de crear `auth.users`).
+
+### ❌ El botón "Probar notificación" no dice nada y no llega.
+
+Abre **DevTools (F12) → Network → Filtra `send-push`**:
+- Status 500 → tu Edge Function tiene error. Mira logs de Edge Function en Supabase Dashboard.
+  Causas frecuentes: `FIREBASE_PRIVATE_KEY` sin saltos `\n`, API FCM no habilitada en Google Cloud.
+- Status 401 → falta `Authorization: Bearer ANON_KEY` (el frontend lo pasa automáticamente).
+- Status 200 pero no llega → ver tabla `push_tokens`: no hay token → permiso no otorgado en ese dispositivo.
+
+### ❌ La APK al abrirla no pide permiso automáticamente.
+
+Esperalo **3 segundos** después del login. Si se rechazó una vez, Android ya no muestra diálogo.
+En ese caso:
+- Ajustes Android → Apps → Conjuntos App → Notificaciones → **Permitir**.
+- Luego reinicia la APK (cerrar y abrir).
+
+---
+
+## 🛡️ Seguridad (IMPORTANTE)
+
+- **Jamás compartas / comitees** `google-services.json`, `.env`, `.env.local`, `service-account.json`.
+- Todos están en `.gitignore`.
+- Si `SUPABASE_SERVICE_ROLE_KEY` se llegó a filtrar, **revócala ya mismo**
+  (Supabase Dashboard → Project Settings → API → Service Role → Rotate).
+- Ante duda: nunca uses `USING (true)` / `WITH CHECK (true)` en políticas de tablas con datos reales.
+  Las plantillas viejas que permitían eso deben ser **sobrescritas con `supabase-auth-secure-migration.sql`**.
+
+---
+
+## 📁 Estructura rápida del proyecto
+
+```
+conjuntos-app/
+├─ index.html
+├─ package.json
+├─ vite.config.ts
+├─ capacitor.config.ts              # Config Capacitor Android (Live Server Vercel)
+├─ android/                         # Proyecto Android (Gradle)
+│  └─ app/src/main/
+│     ├─ AndroidManifest.xml        # Permisos + servicios FCM + Intents
+│     ├─ java/com/conjuntos/app/MainActivity.java  # Canal notificaciones HIGH
+│     ├─ res/values/colors.xml      # Ícono/acento
+│     └─ assets/public/             # Build web (solo fallback, Capacitor usa URL de Vercel)
+├─ src/
+│  ├─ App.jsx                       # Rutas + Routing
+│  ├─ main.jsx                      # Mount React + registerPwa()
+│  ├─ pwa.js                        # Service Worker registration + cleanup SW huérfanos
+│  ├─ context/
+│  │  ├─ AuthContext.jsx            # Sesión, perfil, complejo actual
+│  │  └─ DataContext.jsx            # CRUD, Realtime, triggers push
+│  ├─ lib/
+│  │  ├─ firebase.ts                # FCM web
+│  │  ├─ capacitorNotifications.ts  # FCM nativo Capacitor
+│  │  ├─ pushNotifications.ts       # Orquesta ambos flujos + multi-device
+│  │  ├─ supabaseClient.js          # Browser Supabase client
+│  │  ├─ supabaseRepo.js            # Lecturas Supabase
+│  │  └─ config.js                  # Variables centralizadas
+│  └─ components/ (UI React)
+├─ public/
+│  ├─ manifest.webmanifest          # Íconos PNG, shortcuts, display standalone
+│  ├─ firebase-messaging-sw.js      # Service Worker FCM (onBackgroundMessage)
+│  └─ icons/ icon-192/512 .svg + .png
+├─ supabase/
+│  └─ functions/
+│     ├─ send-push/index.ts         # Envía FCM HTTP v1 con priority: HIGH
+│     ├─ admin-create/index.ts
+│     └─ guard-create/index.ts
+├─ *.sql (migraciones Supabase)
+└─ README.md (este archivo)
+```
+
+---
+
+## 🤖 Guía rápida para seguir trabajando con una IA
+
+1. Primero lee `package.json`, `src/lib/*`, `src/context/*`.
+2. Pregúntate: ¿este cambio toca *React/CSS* (OTA Vercel) o *nativo Android* (nueva APK)?
+3. Si toca notificaciones: ejecuta **build web** + deploy Vercel.
+4. Si toca Android: `npx cap sync android` + `assembleDebug`.
+5. Nunca incluyas `service_role` en JS del frontend.
+6. Después de cada cambio importante → `npm run build` exitoso es la 1ª prueba.
+
+Proyecto de uso interno / privado.

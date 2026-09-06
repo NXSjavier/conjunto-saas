@@ -3,7 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider } from './context/DataContext';
 import AppLayout from './components/layout/AppLayout';
 import GuestLayout from './components/layout/GuestLayout';
-import PasswordRecoveryScreen from './components/layout/PasswordRecoveryScreen';import { initCapacitorNotifications } from './capacitor';
+import PasswordRecoveryScreen from './components/layout/PasswordRecoveryScreen';
 import { requestAppNotificationPermission } from './lib/appNotifications';
 // Super Admin views
 import { SuperAdminDashboard } from './components/views/super/SuperAdminDashboard';
@@ -214,7 +214,6 @@ function AppContent() {
   const [recoveryMode, setRecoveryMode] = useState(false);
 
   React.useEffect(() => {
-    initCapacitorNotifications();
     if (currentUser && typeof Notification !== 'undefined' && Notification.permission === 'default') {
       requestAppNotificationPermission();
     }

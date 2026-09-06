@@ -1,6 +1,8 @@
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 
+export type NativePermissionStatus = 'granted' | 'denied' | 'prompt' | 'unsupported';
+
 export interface NativePushEvent {
   kind: 'received' | 'tap';
   title: string;
@@ -11,6 +13,9 @@ export interface NativePushEvent {
 let listenersAttached = false;
 let tapHandler: ((e: NativePushEvent) => void) | null = null;
 let receiveHandler: ((e: NativePushEvent) => void) | null = null;
+let pendingTapEvent: NativePushEvent | null = null;
+let initialCheckDone = false;
+let cachedPermissionStatus: NativePermissionStatus | null = null;
 
 export function isNative(): boolean {
   try {
@@ -22,11 +27,34 @@ export function isNative(): boolean {
 
 function payloadOf(notification: any): { title: string; body: string; url: string } {
   const data = notification?.data || {};
+  const extra = notification || {};
   return {
-    title: notification?.title || data.title || 'Conjuntos App',
-    body: notification?.body || notification?.description || data.body || '',
-    url: data.url || '/',
+    title: extra.title || data.title || data.notification_title || 'Conjuntos App',
+    body: extra.body || extra.description || data.body || data.notification_body || '',
+    url: data.url || data.click_action || '/',
   };
+}
+
+function dispatchPendingTap() {
+  if (pendingTapEvent && tapHandler) {
+    const ev = pendingTapEvent;
+    pendingTapEvent = null;
+    try { tapHandler(ev); } catch {}
+  }
+}
+
+async function checkLaunchNotification() {
+  if (initialCheckDone || !isNative()) return;
+  initialCheckDone = true;
+  try {
+    const res = await PushNotifications.getDeliveredNotifications();
+    const notifications = res?.notifications || [];
+    if (notifications.length > 0) {
+      const last = notifications[notifications.length - 1];
+      pendingTapEvent = { kind: 'tap', ...payloadOf(last) };
+      dispatchPendingTap();
+    }
+  } catch {}
 }
 
 function attachListeners() {
@@ -39,30 +67,68 @@ function attachListeners() {
 
   PushNotifications.addListener('pushNotificationReceived', (notification) => {
     const p = payloadOf(notification);
-    receiveHandler?.({ kind: 'received', ...p });
+    try { receiveHandler?.({ kind: 'received', ...p }); } catch {}
   }).catch(() => {});
 
   PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
     const p = payloadOf(action?.notification);
-    tapHandler?.({ kind: 'tap', ...p });
+    const ev: NativePushEvent = { kind: 'tap', ...p };
+    if (tapHandler) {
+      try { tapHandler(ev); } catch {}
+    } else {
+      pendingTapEvent = ev;
+    }
   }).catch(() => {});
+
+  setTimeout(() => checkLaunchNotification(), 800);
+}
+
+/**
+ * Consulta el estado REAL del permiso de notificaciones en Android,
+ * sin depender de localStorage. Cachea el resultado durante la sesión.
+ */
+export async function checkNativePermissions(forceRefresh = false): Promise<NativePermissionStatus> {
+  if (!isNative()) return 'unsupported';
+  if (cachedPermissionStatus && !forceRefresh) return cachedPermissionStatus;
+  try {
+    attachListeners();
+    const res = await PushNotifications.checkPermissions();
+    const r = res?.receive || 'prompt';
+    let status: NativePermissionStatus;
+    if (r === 'granted') status = 'granted';
+    else if (r === 'denied') status = 'denied';
+    else status = 'prompt';
+    cachedPermissionStatus = status;
+    return status;
+  } catch (err) {
+    console.error('checkNativePermissions error:', err);
+    cachedPermissionStatus = 'prompt';
+    return 'prompt';
+  }
+}
+
+export function resetNativePermissionCache() {
+  cachedPermissionStatus = null;
 }
 
 export function onNativePushEvents(onReceive: (e: NativePushEvent) => void, onTap: (e: NativePushEvent) => void) {
   attachListeners();
   receiveHandler = onReceive;
   tapHandler = onTap;
+  dispatchPendingTap();
 }
 
 /**
- * Pide permiso del sistema (llamar desde gesto del usuario) y devuelve el
- * token FCM nativo. Null si se niega o falla.
+ * Pide permiso del sistema Android (abre diálogo nativo tipo WhatsApp)
+ * y devuelve el token FCM nativo. Null si se niega o falla.
  */
-export async function requestNativeToken(timeoutMs = 20000): Promise<string | null> {
+export async function requestNativeToken(timeoutMs = 25000): Promise<string | null> {
   if (!isNative()) return null;
   attachListeners();
   try {
+    resetNativePermissionCache();
     const perm = await PushNotifications.requestPermissions();
+    cachedPermissionStatus = perm.receive === 'granted' ? 'granted' : perm.receive === 'denied' ? 'denied' : 'prompt';
     if (perm.receive !== 'granted') return null;
 
     const token = await new Promise<string | null>((resolve) => {
@@ -70,9 +136,10 @@ export async function requestNativeToken(timeoutMs = 20000): Promise<string | nu
       const timer = setTimeout(() => {
         if (!done) { done = true; resolve(null); }
       }, timeoutMs);
-      PushNotifications.addListener('registration', (t) => {
+      const regHandler = PushNotifications.addListener('registration', (t) => {
         if (!done) { done = true; clearTimeout(timer); resolve(t.value || null); }
-      }).catch(() => {
+      });
+      regHandler.catch(() => {
         if (!done) { done = true; clearTimeout(timer); resolve(null); }
       });
       PushNotifications.register().catch(() => {
@@ -87,14 +154,25 @@ export async function requestNativeToken(timeoutMs = 20000): Promise<string | nu
 }
 
 /**
- * Intento silencioso (login): registra y guarda el token cuando llegue,
- * sin mostrar dialogo de permiso.
+ * Intento silencioso (login): SI Y SOLO SI el permiso ya fue otorgado,
+ * registra y guarda el token. Sin mostrar diálogo.
  */
-export function registerNativeSilently(onToken: (token: string) => void) {
-  if (!isNative()) return;
+export async function registerNativeSilently(onToken: (token: string) => void): Promise<boolean> {
+  if (!isNative()) return false;
   attachListeners();
-  PushNotifications.addListener('registration', (t) => {
-    if (t?.value) onToken(t.value);
-  }).catch(() => {});
-  PushNotifications.register().catch(() => {});
+  try {
+    const status = await checkNativePermissions(true);
+    if (status !== 'granted') {
+      // Permiso no otorgado: NO llamamos a register, no pedimos nada.
+      return false;
+    }
+    PushNotifications.addListener('registration', (t) => {
+      if (t?.value) onToken(t.value);
+    }).catch(() => {});
+    await PushNotifications.register();
+    return true;
+  } catch (err) {
+    console.error('registerNativeSilently error:', err);
+    return false;
+  }
 }

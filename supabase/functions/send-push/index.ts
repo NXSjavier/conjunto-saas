@@ -111,9 +111,35 @@ async function sendFCM(targetToken: string, title: string, msgBody: string, data
           token: targetToken,
           notification: { title, body: msgBody },
           data,
+          android: {
+            priority: "high",
+            ttl: "86400s",
+            notification: {
+              title,
+              body: msgBody,
+              channel_id: "default_channel",
+              sound: "default",
+              click_action: "FLUTTER_NOTIFICATION_CLICK",
+              default_sound: true,
+              default_vibrate_timings: true,
+              default_light_settings: true,
+              visibility: "PUBLIC",
+              priority: "MAX",
+            },
+          },
           webpush: {
-            headers: { TTL: "86400" },
+            headers: { TTL: "86400", Urgency: "high" },
             notification: { title, body: msgBody, icon: "/icons/icon-192.svg", badge: "/icons/icon-192.svg" },
+          },
+          apns: {
+            headers: { "apns-priority": "10" },
+            payload: {
+              aps: {
+                alert: { title, body: msgBody },
+                sound: "default",
+                contentAvailable: true,
+              },
+            },
           },
         },
       }),
