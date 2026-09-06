@@ -247,9 +247,16 @@ export async function sendPushToUser(targetUserId: string, title: string, body: 
     const tokens = await collectTokensForProfiles([targetUserId]);
     if (tokens.length === 0) return;
 
-    await supabase.functions.invoke('send-push', {
-      body: { tokens, title, body, url: url || '/' },
+    const res = await fetch('/api/send-push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tokens,
+        notification: { title, body },
+        data: { url: url || '/' },
+      }),
     });
+    if (!res.ok) console.error('send-push error:', await res.text());
   } catch (err) {
     console.error('sendPushToUser error:', err);
   }
@@ -264,9 +271,16 @@ export async function sendPushToMany(userIds: string[], title: string, body: str
     const tokens = await collectTokensForProfiles(userIds);
     if (tokens.length === 0) return;
 
-    await supabase.functions.invoke('send-push', {
-      body: { tokens, title, body, url: url || '/' },
+    const res = await fetch('/api/send-push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tokens,
+        notification: { title, body },
+        data: { url: url || '/' },
+      }),
     });
+    if (!res.ok) console.error('send-push error:', await res.text());
   } catch (err) {
     console.error('sendPushToMany error:', err);
   }
