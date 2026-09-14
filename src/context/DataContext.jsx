@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { PLAN_LIMITS } from '../types.js';
 import { useAuth } from './AuthContext';
 import { playNotificationBeep as playNotificationSound, playSuccessChime, playTrashWhoosh } from '../lib/sound';
@@ -36,6 +36,10 @@ const insertNotification = (userId, title, message, type) => {
 
 export const DataProvider = ({ children }) => {
   const { currentUser, currentComplex, updateComplexSession } = useAuth();
+
+  // Refs para evitar stale closures en suscripciones realtime
+  const usersRef = useRef([]);
+  const currentUserRef = useRef(null);
 
   const [complexes, setComplexes] = useState([]);
   const [users, setUsers] = useState([]);
@@ -250,14 +254,30 @@ export const DataProvider = ({ children }) => {
 
   useEffect(() => { refreshData(); }, [refreshData]);
 
+  // Refs sincronizados para evitar stale closures en callbacks realtime
+  useEffect(() => { usersRef.current = users; }, [users]);
+  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+
   // Realtime: Supabase Realtime como fuente ÚNICA para web y móvil
   useEffect(() => {
     let channel;
     let retries = 0;
     const MAX_RETRIES = 5;
 
+    let disposed = false;
+    let reconnectTimer = null;
+
     const connect = () => {
-      channel = supabase.channel('conjuntos-v3')
+      if (disposed) return;
+      // Remover el canal previo antes de crear uno nuevo. Supabase deduplica
+      // por nombre: reutilizar un canal ya suscrito rompe con
+      // "cannot add postgres_changes callbacks ... after subscribe()".
+      if (channel) {
+        supabase.removeChannel(channel).catch(() => {});
+        channel = null;
+      }
+      // Nombre único por conexión evita colisiones con canales viejos en cola de remoción
+      channel = supabase.channel(`conjuntos-v3-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
         // ============================================
         // ✅ VISITORS - MEJORADO CON PUSH
         // ============================================
@@ -312,8 +332,8 @@ export const DataProvider = ({ children }) => {
             playNotificationBeep('Nuevo Comunicado', payload.new.title);
             (async () => {
               try {
-                const recipients = users
-                  .filter((u) => u.complex_id === payload.new.complex_id && u.id !== currentUser?.id && u.status === 'active')
+                 const recipients = usersRef.current
+                  .filter((u) => u.complex_id === payload.new.complex_id && u.id !== currentUserRef.current?.id && u.status === 'active')
                   .map((u) => u.id);
                 if (recipients.length > 0) {
                   recipients.forEach((uid) => insertNotification(uid, '📢 Nuevo Comunicado', payload.new.title, 'announcement'));
@@ -483,16 +503,25 @@ export const DataProvider = ({ children }) => {
         })
 
         .subscribe((status, err) => {
+          if (disposed) return;
           if (status === 'SUBSCRIBED') { setIsWsConnected(true); retries = 0; }
           if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             setIsWsConnected(false);
-            if (retries < MAX_RETRIES) { retries++; setTimeout(connect, 2000 * retries); }
+            if (retries < MAX_RETRIES && !reconnectTimer) {
+              retries++;
+              reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, 2000 * retries);
+            }
           }
         });
     };
 
     connect();
-    return () => { if (channel) supabase.removeChannel(channel); };
+    return () => {
+      disposed = true;
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      if (channel) supabase.removeChannel(channel);
+      channel = null;
+    };
   }, [currentUser, getAdminIdsForComplex]);
 
   // ============================================
@@ -753,11 +782,21 @@ export const DataProvider = ({ children }) => {
 
   const createAnnouncement = async (title, content) => {
     if (!currentComplex || !currentUser) return;
+    if (currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
+      console.warn('createAnnouncement: role no autorizado:', currentUser.role);
+      return;
+    }
     if (standalone) { const id = genId('ann'); const payload = { id, complex_id: currentComplex.id, title, content, author_name: currentUser.name, author_id: currentUser.id, created_at: new Date().toISOString() }; const { data: created, error } = await supabase.from('announcements').insert(payload).select().single(); if (!error && created) { setAnnouncements((p) => [created, ...p]); playSuccessChime(); } return; }
     try { const res = await apiFetch('/api/announcements', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ complex_id: currentComplex.id, title, content, author_name: currentUser.name, author_id: currentUser.id }) }); if (res.ok) { await res.json(); playSuccessChime(); } } catch (e) { console.error(e); }
   };
 
   const deleteAnnouncement = async (id) => {
+    if (!currentUser) return;
+    // Solo admin o super_admin pueden eliminar comunicados
+    if (currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
+      console.warn('deleteAnnouncement: role no autorizado:', currentUser.role);
+      return;
+    }
     if (standalone) {
       const { error } = await supabase.from('announcements').delete().eq('id', id);
       if (error) { console.error('deleteAnnouncement error:', error.message); alert('No se pudo borrar: ' + error.message + '\nEjecuta supabase-standalone-fix.sql'); return; }
@@ -773,6 +812,14 @@ export const DataProvider = ({ children }) => {
   };
 
   const deleteComment = async (commentId) => {
+    if (!currentUser) return;
+    // Buscar el comentario para verificar autorización
+    const comment = comments.find((c) => c.id === commentId);
+    // Solo el autor del comentario o admin/super_admin pueden borrarlo
+    if (comment && comment.author_id !== currentUser.id && currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
+      console.warn('deleteComment: role no autorizado');
+      return;
+    }
     if (standalone) {
       const { error } = await supabase.from('announcement_comments').delete().eq('id', commentId);
       if (error) { console.error('deleteComment error:', error.message); alert(`No se pudo eliminar el comentario: ${error.message}`); return; }

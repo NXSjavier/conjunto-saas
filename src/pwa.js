@@ -1,5 +1,7 @@
 const APP_DATA_VERSION = '5';
 
+let autoUpdateStarted = false;
+
 function clearObsoleteAppData() {
   try {
     const previousVersion = localStorage.getItem('conjuntos_app_data_version');
@@ -185,19 +187,40 @@ export async function registerPwa() {
         }
       }
 
-      // Escuchar cambios en el SW
-      reg.onupdatefound = () => {
-        const installingWorker = reg.installing;
-        if (installingWorker) {
-          console.log('🔄 Nuevo SW instalando...');
-          installingWorker.onstatechange = () => {
-            if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              console.log('✅ Nuevo SW instalado, recargando...');
-              try { window.location.reload(); } catch {}
+      // ============================================================
+      // ✅ AUTO-ACTUALIZACIÓN TRAS DEPLOY
+      // Chequea el servidor cada 60 s y al volver a la pestaña; si hay
+      // una versión nueva, la PWA abierta se recarga sola.
+      // ============================================================
+      let reloading = false;
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          // Recargar solo cuando el nuevo SW ya controla (activado)
+          if (newWorker.state === 'activated' && navigator.serviceWorker.controller && !reloading) {
+            reloading = true;
+            console.log('🔄 Nueva versión detectada, actualizando app...');
+            setTimeout(() => { try { window.location.reload(); } catch {} }, 400);
+          }
+        });
+      });
+
+      if (!autoUpdateStarted) {
+        autoUpdateStarted = true;
+        const checkForUpdate = async () => {
+          try {
+            const currentReg = await navigator.serviceWorker.getRegistration('/');
+            if (currentReg && navigator.serviceWorker.controller) {
+              await currentReg.update();
             }
-          };
-        }
-      };
+          } catch {}
+        };
+        setInterval(checkForUpdate, 60000);
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') checkForUpdate();
+        });
+      }
 
       // Si está instalada como PWA, mantener SW vivo con pings periódicos
       if (isInstalled) {

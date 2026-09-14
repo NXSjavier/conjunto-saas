@@ -52,15 +52,15 @@ export const AnnouncementComments = ({
                   </div>
                   <p className="text-slate-300 text-xs">{c.content}</p>
                 </div>
-                {isAuthor && (
-                  <button
-                    onClick={() => onDeleteComment(c.id)}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 transition-opacity rounded"
-                    title="Eliminar comentario"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
+                 {isAuthor && (
+                   <button
+                     onClick={() => onDeleteComment(c.id)}
+                     className="p-1.5 text-slate-500 hover:text-rose-400 transition-colors rounded min-w-[36px] min-h-[36px] flex items-center justify-center md:opacity-0 md:group-hover:opacity-100"
+                     title="Eliminar comentario"
+                   >
+                     <Trash2 className="w-3.5 h-3.5" />
+                   </button>
+                 )}
               </div>
             );
           })
