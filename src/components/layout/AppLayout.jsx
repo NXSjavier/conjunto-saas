@@ -122,17 +122,26 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pushStatus, setPushStatus] = useState('checking');
   const [pushLoading, setPushLoading] = useState(false);
+  const [pushBannerDismissed, setPushBannerDismissed] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [legalOpen, setLegalOpen] = useState(null);
   const online = useOnlineStatus();
 
   const refreshPushStatus = async (authId) => {
     if (!authId) { setPushStatus('checking'); return; }
-    // Primero inicializa: si el permiso ya estaba otorgado, registra el token en silencio.
     await initPushNotifications(authId).catch(() => {});
     const s = await getPushStatus(authId).catch(() => 'needs-enable');
     setPushStatus(s);
   };
+
+  // Cargar estado persistido del banner de notificaciones
+  const pushBannerKey = currentUser?.auth_user_id ? `push_banner_dismissed_${currentUser.auth_user_id}` : null;
+  useEffect(() => {
+    if (pushBannerKey) {
+      const dismissed = localStorage.getItem(pushBannerKey) === 'true';
+      setPushBannerDismissed(dismissed);
+    }
+  }, [pushBannerKey]);
 
   useEffect(() => {
     const authId = currentUser?.auth_user_id;
@@ -155,10 +164,25 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
 
   const handleEnablePush = async () => {
     if (!currentUser?.auth_user_id) return;
+    const authId = currentUser.auth_user_id;
+
     setPushLoading(true);
-    const ok = await enablePushFromGesture(currentUser.auth_user_id).catch(() => false);
-    await refreshPushStatus(currentUser.auth_user_id);
+
+    // Marcar como dismiss inmediatamente para que el banner no reaparezca
+    setPushBannerDismissed(true);
+    if (pushBannerKey) {
+      try { localStorage.setItem(pushBannerKey, 'true'); } catch {}
+    }
+
+    const ok = await enablePushFromGesture(authId).catch(() => false);
+    await refreshPushStatus(authId);
     setPushLoading(false);
+
+    // Si el permiso fue denegado, limpiar el flag para poder mostrar el banner de "denegado"
+    if (!ok && typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+      // Mantener dismissed; the 'denied' banner will show instead
+    }
+
     return ok;
   };
 
@@ -271,7 +295,7 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
       </nav>
 
       <div className="p-3 border-t border-slate-800 space-y-2">
-        {pushStatus === 'needs-enable' && (
+        {pushStatus === 'needs-enable' && !pushBannerDismissed && (
           <button
             disabled={pushLoading}
             onClick={handleEnablePush}
@@ -440,22 +464,36 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
               </div>
             </div>
           )}
-          {pushStatus === 'needs-enable' && (
+          {pushStatus === 'needs-enable' && !pushBannerDismissed && (
             <div className="mb-4 flex items-center gap-3 p-3 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 shadow-sm">
               <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
                 <Bell className="w-5 h-5 text-emerald-600" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-emerald-900">Recibe notificaciones en tu celular</p>
-                <p className="text-xs text-emerald-600">Visitas, incidencias, avisos y más al instante</p>
+                <p className="text-xs text-emerald-600">Visitas, incidencias, avisos y más al instante. El permiso se solicita una sola vez.</p>
               </div>
-              <button
-                disabled={pushLoading}
-                onClick={handleEnablePush}
-                className="shrink-0 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors cursor-pointer shadow-md"
-              >
-                {pushLoading ? '...' : 'Activar'}
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  disabled={pushLoading}
+                  onClick={handleEnablePush}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors cursor-pointer shadow-md min-h-[40px]"
+                >
+                  {pushLoading ? '...' : 'Activar'}
+                </button>
+                <button
+                  onClick={() => {
+                    setPushBannerDismissed(true);
+                    if (pushBannerKey) {
+                      try { localStorage.setItem(pushBannerKey, 'true'); } catch {}
+                    }
+                  }}
+                  className="p-1 rounded-lg text-emerald-700 hover:bg-emerald-100 transition-colors cursor-pointer min-w-[40px] min-h-[40px] flex items-center justify-center"
+                  title="No mostrar ahora"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           )}
           {pushStatus === 'denied' && (
