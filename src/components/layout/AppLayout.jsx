@@ -5,7 +5,7 @@ import { cn, daysUntilExpiry } from '../../lib/utils';
 import { SupportModal } from '../ui/SupportModal';
 import { LegalModal } from '../legal/LegalModal';
 import { useOnlineStatus } from '../../lib/offlineCache';
-import { enablePushFromGesture, getPushStatus, initPushNotifications, sendPushToUser, getPushDebugInfo } from '../../lib/pushNotifications';
+import { enablePushFromGesture, getPushStatus, initPushNotifications } from '../../lib/pushNotifications';
 import {
   Building2,
   LayoutDashboard,
@@ -122,7 +122,6 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pushStatus, setPushStatus] = useState('checking');
   const [pushLoading, setPushLoading] = useState(false);
-  const [pushTesting, setPushTesting] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [legalOpen, setLegalOpen] = useState(null);
   const online = useOnlineStatus();
@@ -161,22 +160,6 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
     await refreshPushStatus(currentUser.auth_user_id);
     setPushLoading(false);
     return ok;
-  };
-
-  const handleTestPush = async () => {
-    if (!currentUser?.id) return;
-    setPushTesting(true);
-    const ok = await sendPushToUser(currentUser.id, 'Prueba de notificación', 'Si ves esto, las push funcionan en este dispositivo.');
-    console.log('[PushTest] resultado:', ok);
-    if (!ok) alert('No se pudo enviar la prueba. Revisa: 1) que el token esté guardado (debug), 2) que estés usando Chrome/Android con permiso Permitir, 3) logs Vercel /api/send-push');
-    setPushTesting(false);
-  };
-
-  const handleDebugPush = async () => {
-    if (!currentUser?.auth_user_id) return;
-    const info = await getPushDebugInfo(currentUser.auth_user_id).catch(() => ({}));
-    console.log('[PushDebug]', info);
-    alert(`Debug push:\npermiso: ${info.permission}\nsoportado: ${info.isSupported}\nSW activo: ${info.swActive}\nSW: ${info.swScript || '-'}\nVAPID: ${info.vapidConfigured ? 'sí' : 'NO'}\ntoken local: ${info.localToken ? info.localToken.slice(0,16)+'...' : 'ninguno'}\nTokens servidor: ${info.serverTokensCount}\n\nCopia este texto y envíamelo. Si dice VAPID:NO, falta config Vercel. Si SW activo:false, reinstala PWA.`);
   };
 
   const role = currentUser?.role || 'resident';
@@ -307,16 +290,11 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
           </div>
         )}
         {pushStatus === 'ready' && (
-          <button
-            disabled={pushTesting}
-            onClick={handleTestPush}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-emerald-700 bg-emerald-50/60 border border-emerald-200 hover:bg-emerald-100 transition-all cursor-pointer"
-          >
+          <div className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-emerald-700 bg-emerald-50/60 border border-emerald-200 cursor-default">
             <Bell className="w-3.5 h-3.5" />
-            <span>{pushTesting ? 'Enviando prueba...' : 'Notificaciones activas · Probar'}</span>
-          </button>
+            <span>Notificaciones activas</span>
+          </div>
         )}
-        <button onClick={handleDebugPush} className="w-full text-[11px] text-slate-500 hover:text-slate-700 underline py-1 cursor-pointer">Debug push</button>
         <button
           onClick={() => setSupportOpen(true)}
           className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 transition-all cursor-pointer shadow-sm"

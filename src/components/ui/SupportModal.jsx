@@ -16,6 +16,10 @@ export function SupportModal({ isOpen, onClose }) {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
 
+  const role = currentUser?.role;
+  const supportTitle = role === 'admin' ? 'Soporte para Administradores' : role === 'resident' || role === 'guard' ? 'Comunicación con Administración' : 'Soporte';
+  const supportDesc = role === 'admin' ? 'Envía una queja o consulta al Super Admin de la plataforma' : role === 'resident' || role === 'guard' ? 'Escribe al administrador de tu conjunto' : 'Contacta a la administración de la plataforma';
+
   useEffect(() => {
     if (!isOpen) return;
     setSent(false);
@@ -23,16 +27,27 @@ export function SupportModal({ isOpen, onClose }) {
     const load = async () => {
       setLoading(true);
       try {
-        // Super admins + admin del conjunto del usuario (contactos de soporte)
+        const role = currentUser?.role;
         let query = supabase
           .from('profiles')
           .select('id, name, email, phone, role, complex_id')
-          .eq('status', 'active')
-          .in('role', ['super_admin', 'admin'])
-          .limit(10);
-        const { data } = await query;
+          .eq('status', 'active');
+
+        if (role === 'admin') {
+          // Admin → solo puede contactar a Super Admin
+          query = query.eq('role', 'super_admin');
+        } else if (role === 'resident' || role === 'guard') {
+          // Residente/Guardia → solo el admin de su conjunto
+          query = query
+            .eq('role', 'admin')
+            .eq('complex_id', currentUser?.complex_id || '');
+        } else {
+          // Super Admin → otros super admins
+          query = query.eq('role', 'super_admin').neq('id', currentUser?.id || '');
+        }
+
+        const { data } = await query.limit(10);
         const list = data || [];
-        // Primero super_admins, luego el admin del mismo conjunto
         list.sort((a, b) => {
           if (a.role === b.role) {
             if (a.complex_id === currentUser?.complex_id) return -1;
@@ -53,15 +68,22 @@ export function SupportModal({ isOpen, onClose }) {
     if (!message.trim() || admins.length === 0) return;
     setSending(true);
     try {
-      const notifs = admins.map((a) => ({
+      const notifs = admins.map((a) => {
+        const isToSuperAdmin = a.role === 'super_admin';
+        const title = isToSuperAdmin
+          ? `🆘 Queja/Soporte: ${currentUser?.name || 'Admin'}`
+          : `🆘 Comunicación: ${currentUser?.name || 'Usuario'}`;
+        const msg = `${message.trim().slice(0, 500)} — ${currentUser?.email || ''} (${role === 'admin' ? 'Administrador' : role === 'resident' ? 'Residente' : role === 'guard' ? 'Guardia' : role})`;
+        return {
         id: genId('notif'),
         user_id: a.id,
-        title: `🆘 Soporte: ${currentUser?.name || 'Usuario'}`,
-        message: `${message.trim().slice(0, 500)} — ${currentUser?.email || ''} (${currentUser?.role || ''})`,
+        title,
+        message: msg,
         type: 'support',
         read: 0,
         created_at: new Date().toISOString(),
-      }));
+      };
+      });
       const { error } = await supabase.from('notifications').insert(notifs);
       if (error) throw error;
       playSuccessChime();
@@ -78,8 +100,8 @@ export function SupportModal({ isOpen, onClose }) {
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Soporte"
-      description="Contacta a la administración de la plataforma"
+       title={supportTitle}
+       description={supportDesc}
       maxWidth="md"
     >
       {loading ? (
