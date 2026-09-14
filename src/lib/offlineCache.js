@@ -25,6 +25,13 @@ export function getCachedAnnouncements(complexId) {
   }
 }
 
+// Elimina el caché de un conjunto (cuando online confirma que ya no hay nada)
+export function clearCachedAnnouncements(complexId) {
+  try {
+    localStorage.removeItem(KEY(complexId));
+  } catch {}
+}
+
 // Hook: estado de conexión (online/offline)
 export function useOnlineStatus() {
   const [online, setOnline] = useState(

@@ -20,6 +20,22 @@ const playNotificationBeep = (title, body) => {
   notifyWhenHidden(title || 'Residex', body || 'Tienes una actualización nueva.');
 };
 
+/** Fetch activo usuarios de un complejo desde Supabase (fallback para realtime) */
+const fetchActiveUsersFromSupabase = async (complexId) => {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, name, email, role, complex_id, status')
+      .eq('complex_id', complexId)
+      .eq('status', 'active');
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('[Realtime] Error fetching users for notifications:', error);
+    return [];
+  }
+};
+
 /** Insertar notificación en BD (silencioso, no bloquea UI) */
 const insertNotification = (userId, title, message, type) => {
   if (!userId || !title) return;
@@ -258,6 +274,10 @@ export const DataProvider = ({ children }) => {
   useEffect(() => { usersRef.current = users; }, [users]);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
 
+  // Ref para getAdminIdsForComplex (evita reconexión del canal cada vez que cambia users)
+  const getAdminIdsRef = useRef(getAdminIdsForComplex);
+  useEffect(() => { getAdminIdsRef.current = getAdminIdsForComplex; }, [getAdminIdsForComplex]);
+
   // Realtime: Supabase Realtime como fuente ÚNICA para web y móvil
   useEffect(() => {
     let channel;
@@ -288,7 +308,7 @@ export const DataProvider = ({ children }) => {
             
             (async () => {
               try {
-                const adminIds = await getAdminIdsForComplex(payload.new.complex_id);
+                const adminIds = await getAdminIdsRef.current(payload.new.complex_id);
                 if (adminIds.length > 0) {
                   adminIds.forEach((uid) => insertNotification(uid, '🚪 Nuevo Pase de Visita', `${payload.new.visitor_name} — Apt ${payload.new.destination_apartment || '?'}`, 'visitor'));
                   await sendPushToMany(
@@ -332,9 +352,16 @@ export const DataProvider = ({ children }) => {
             playNotificationBeep('Nuevo Comunicado', payload.new.title);
             (async () => {
               try {
-                 const recipients = usersRef.current
+                let recipients = usersRef.current
                   .filter((u) => u.complex_id === payload.new.complex_id && u.id !== currentUserRef.current?.id && u.status === 'active')
                   .map((u) => u.id);
+                // Fallback: si el estado está vacío (carga asíncrona), consultar directamente
+                if (recipients.length === 0) {
+                  const freshUsers = await fetchActiveUsersFromSupabase(payload.new.complex_id);
+                  recipients = freshUsers
+                    .filter((u) => u.id !== currentUserRef.current?.id)
+                    .map((u) => u.id);
+                }
                 if (recipients.length > 0) {
                   recipients.forEach((uid) => insertNotification(uid, '📢 Nuevo Comunicado', payload.new.title, 'announcement'));
                   await sendPushToMany(
@@ -357,21 +384,29 @@ export const DataProvider = ({ children }) => {
         // ✅ COMMENTS
         // ============================================
         .on('postgres_changes', { event: '*', schema: 'public', table: 'announcement_comments' }, (payload) => {
-          if (payload.eventType === 'INSERT') { 
-            setComments((p) => [...p.filter((c) => c.id !== payload.new.id), payload.new]); 
-            playNotificationBeep('Nuevo Comentario', payload.new.text?.substring(0, 50) || 'Nuevo comentario');
-            // Notificar al autor del comunicado si es de otro usuario
-            if (payload.new.author_id && payload.new.announcement_id) {
+          if (payload.eventType === 'INSERT') {
+            setComments((p) => [...p.filter((c) => c.id !== payload.new.id), payload.new]);
+            playNotificationBeep('Nuevo Comentario', payload.new.content?.substring(0, 50) || 'Nuevo comentario');
+            // Notificar al autor del comunicado si es de otro usuario + envío push
+            if (payload.new.author_id && payload.new.announcement_id && payload.new.content) {
               (async () => {
                 try {
                   const { data: announcement } = await supabase.from('announcements').select('author_id').eq('id', payload.new.announcement_id).single();
                   if (announcement?.author_id && announcement.author_id !== payload.new.author_id) {
-                    insertNotification(announcement.author_id, '💬 Nuevo Comentario', payload.new.text?.substring(0, 80) || 'Nuevo comentario', 'comment');
+                    const commentText = payload.new.content?.substring(0, 80) || 'Nuevo comentario';
+                    insertNotification(announcement.author_id, '💬 Nuevo Comentario', commentText, 'comment');
+                    await sendPushToUser(
+                      announcement.author_id,
+                      '💬 Nuevo Comentario',
+                      commentText,
+                      `/announcements/${payload.new.announcement_id}`
+                    ).catch(() => {});
                   }
                 } catch {}
               })();
             }
           }
+          if (payload.eventType === 'UPDATE') setComments((p) => p.map((c) => c.id === payload.new.id ? payload.new : c));
           if (payload.eventType === 'DELETE') setComments((p) => p.filter((c) => c.id !== payload.old.id));
         })
 
@@ -385,7 +420,7 @@ export const DataProvider = ({ children }) => {
             
             (async () => {
               try {
-                const adminIds = await getAdminIdsForComplex(payload.new.complex_id);
+                const adminIds = await getAdminIdsRef.current(payload.new.complex_id);
                 if (adminIds.length > 0) {
                   adminIds.forEach((uid) => insertNotification(uid, '🚨 Nueva Incidencia Reportada', `${payload.new.title} — ${payload.new.priority || 'Normal'}`, 'incident'));
                   await sendPushToMany(
@@ -414,7 +449,7 @@ export const DataProvider = ({ children }) => {
             
             (async () => {
               try {
-                const adminIds = await getAdminIdsForComplex(payload.new.complex_id);
+                const adminIds = await getAdminIdsRef.current(payload.new.complex_id);
                 if (adminIds.length > 0) {
                   adminIds.forEach((uid) => insertNotification(uid, '📅 Nueva Solicitud de Reserva', `${payload.new.area_name} — ${payload.new.reservation_date || ''}`, 'reservation'));
                   await sendPushToMany(
@@ -473,7 +508,8 @@ export const DataProvider = ({ children }) => {
         // ============================================
         .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, (payload) => {
           if (payload.eventType === 'INSERT') {
-            if (!currentUser || payload.new.user_id === currentUser.id) {
+            const uid = currentUserRef.current?.id;
+            if (uid && payload.new.user_id === uid) {
               setNotifications((p) => [payload.new, ...p.filter((n) => n.id !== payload.new.id)]);
               playNotificationBeep(payload.new.title || 'Notificación', payload.new.message || '');
             }
@@ -493,7 +529,7 @@ export const DataProvider = ({ children }) => {
         // ✅ USAGE_LOG (uso diario, en vivo para super_admin)
         // ============================================
         .on('postgres_changes', { event: '*', schema: 'public', table: 'usage_log' }, (payload) => {
-          if (currentUser?.role !== 'super_admin') return;
+          if (currentUserRef.current?.role !== 'super_admin') return;
           if (payload.eventType === 'INSERT') {
             setDailyUsage((p) => [...p.filter((r) => r.id !== payload.new.id), payload.new]);
           }
@@ -522,7 +558,7 @@ export const DataProvider = ({ children }) => {
       if (channel) supabase.removeChannel(channel);
       channel = null;
     };
-  }, [currentUser, getAdminIdsForComplex]);
+  }, [currentUser]);
 
   // ============================================
   // ✅ PRESENCIA EN TIEMPO REAL (conectados/desconectados)
@@ -807,25 +843,43 @@ export const DataProvider = ({ children }) => {
 
   const addComment = async (announcementId, content) => {
     if (!currentUser) return;
-    if (standalone) { const id = genId('comm'); const payload = { id, announcement_id: announcementId, author_name: currentUser.name, author_id: currentUser.id, content, created_at: new Date().toISOString() }; const { data: created, error } = await supabase.from('announcement_comments').insert(payload).select().single(); if (!error && created) { setComments((p) => [...p, created]); playNotificationBeep('Nuevo Comentario', content.substring(0, 50)); } return; }
-    try { const res = await apiFetch(`/api/announcements/${announcementId}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ author_name: currentUser.name, author_id: currentUser.id, content }) }); if (res.ok) { await res.json(); playNotificationBeep('Nuevo Comentario', content.substring(0, 50)); } } catch (e) { console.error(e); }
+    const payload = {
+      id: genId('comm'),
+      announcement_id: announcementId,
+      author_name: currentUser.name,
+      author_id: currentUser.id,
+      content,
+      created_at: new Date().toISOString(),
+    };
+    const { data: created, error } = await supabase
+      .from('announcement_comments')
+      .insert(payload)
+      .select()
+      .single();
+    if (error) {
+      console.error('addComment error:', error.message);
+      alert('No se pudo enviar el comentario: ' + error.message);
+      return;
+    }
+    if (created) setComments((p) => [...p.filter((c) => c.id !== created.id), created]);
+    playNotificationBeep('Nuevo Comentario', content.substring(0, 50));
   };
 
   const deleteComment = async (commentId) => {
     if (!currentUser) return;
-    // Buscar el comentario para verificar autorización
     const comment = comments.find((c) => c.id === commentId);
-    // Solo el autor del comentario o admin/super_admin pueden borrarlo
     if (comment && comment.author_id !== currentUser.id && currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
       console.warn('deleteComment: role no autorizado');
       return;
     }
-    if (standalone) {
-      const { error } = await supabase.from('announcement_comments').delete().eq('id', commentId);
-      if (error) { console.error('deleteComment error:', error.message); alert(`No se pudo eliminar el comentario: ${error.message}`); return; }
-      setComments((prev) => prev.filter((c) => c.id !== commentId)); playTrashWhoosh(); return;
+    const { error } = await supabase.from('announcement_comments').delete().eq('id', commentId);
+    if (error) {
+      console.error('deleteComment error:', error.message);
+      alert(`No se pudo eliminar el comentario: ${error.message}`);
+      return;
     }
-    try { const res = await apiFetch(`/api/announcements/comments/${commentId}`, { method: 'DELETE' }); if (res.ok) { setComments((prev) => prev.filter((c) => c.id !== commentId)); playTrashWhoosh(); } } catch (e) { console.error(e); }
+    setComments((p) => p.filter((c) => c.id !== commentId));
+    playTrashWhoosh();
   };
 
   // ✅ MEJORADO: updateIncidentStatus con notificación push

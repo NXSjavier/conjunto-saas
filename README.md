@@ -385,7 +385,7 @@ El super admin ve **toda la plataforma SaaS** (todos los conjuntos). Su dashboar
 | Apartamentos | 50 | 200 | 9999 |
 | Guardas | 2 | 5 | 999 |
 | Áreas comunes | 1 | 5 | 999 |
-| Ingreso estimado ref. | — | $96k COP/mes | $196k COP/mes |
+| Ingreso estimado ref. | — | $30 USD / $120k COP | $100 USD / $400k COP |
 
 - Los límites se validan en la app (`checkResourceLimit` en `DataContext.jsx`); al superarlos se muestra alerta "Límite alcanzado".
 - El tema visual cambia por plan: Free = claro (verde), Pro = oscuro (cyan), Enterprise = oscuro (violeta).
@@ -497,10 +497,10 @@ npx vercel --prod --yes
 1. Despliega la PWA en Vercel (`npm run build` + `npx vercel --prod --yes`).
 2. Instala / abre la PWA en tu celular **(Chrome Android)**.
 3. Inicia sesión → acepta el permiso (auto-prompt a los ~3 s, o banner/botón **Activar**).
-4. Abre el **sidebar lateral** → **Notificaciones activas · Probar**. Si algo falla, toca **Debug push** (muestra permiso, SW, VAPID, token local y tokens en servidor).
+4. Abre el **sidebar lateral** → **Notificaciones activas**. Verifica que aparezca tu token en Supabase (tabla `push_tokens`).
 5. En Supabase, tabla `push_tokens`, verifica que exista un registro para ese usuario.
 6. **Cierra TOTALMENTE Chrome / la PWA** (deslízala de recientes).
-7. Desde otro dispositivo (PC) o sesión incógnita → envía otra push de prueba (botón Probar o crea un anuncio/reserva).
+7. Desde otro dispositivo (PC) o sesión incógnita → crea una nueva reserva o anuncio para generar una push de prueba.
 8. ✅ Debe llegar en la barra superior del celular aunque la app esté cerrada.
 
 > **Nota PWA:** si el sistema operativo mata totalmente el proceso del navegador,
@@ -591,7 +591,7 @@ Si quieres las rutas de `server.ts` hosteadas 24/7 sin tu PC encendida:
 - [ ] `resident` solo ve su apartamento / sus reservas
 - [ ] Intentar modificar reserva ajena → rechazado (RLS o RPC)
 - [ ] Anuncio creado en Admin aparece en 2do celular (Realtime)
-- [ ] Botón lateral **Probar notificación** llega a la barra superior del dispositivo
+- [ ] Crear anuncio/reserva llega a la barra superior del dispositivo (push)
 - [ ] App totalmente cerrada, push llega (background)
 - [ ] Responsive 360px (celular antiguo): sin overflow horizontal de página; tablas scrollean internas
 - [ ] En `dist/` NO aparece la palabra `SUPABASE_SERVICE_ROLE_KEY`
@@ -617,7 +617,7 @@ Ejecuta **`supabase-auth-trigger-fix.sql`** en el SQL Editor de Supabase.
 Un trigger auto-creado por extensiones intenta insertar `profiles` y rompe el alta
 (la app ya inserta `profiles` en el Edge Function después de crear `auth.users`).
 
-### ❌ El botón "Probar notificación" no dice nada y no llega.
+### ❌ La push de anuncio/reserva no llega al celular.
 
 Abre **DevTools (F12) → Network → Filtra `send-push`**:
 - Status 500 → tu Edge Function tiene error. Mira logs de Edge Function en Supabase Dashboard.
@@ -683,7 +683,7 @@ residex/
 │     ├─ layout/ SetupWizard.jsx    # Setup inicial (super admin + primer conjunto)
 │     ├─ legal/ LegalModal.jsx      # Política de Privacidad + Términos (Ecuador)
 │     ├─ ui/ Button, Card, Input, Modal, Badge, StatCard, PageHeader, QuickActions,
-│     │      ErrorBoundary, SupportModal…
+│     │      ErrorBoundary, SupportModal, NotificationsView…
 │     └─ views/
 │        ├─ super/ SuperAdminDashboard (+presencia, uso diario, errores), ComplexesView,
 │        │         AdminsView, SuperUsersView, SubscriptionsView

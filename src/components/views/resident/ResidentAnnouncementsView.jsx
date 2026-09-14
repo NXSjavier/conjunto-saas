@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useData } from '../../../context/DataContext';
 import { useAuth } from '../../../context/AuthContext';
 import { Card } from '../../ui/Card';
@@ -7,17 +7,27 @@ import { Badge } from '../../ui/Badge';
 import { AnnouncementComments } from '../../ui/AnnouncementComments';
 import { Megaphone, WifiOff } from 'lucide-react';
 import { formatDate } from '../../../lib/utils';
-import { getCachedAnnouncements, useOnlineStatus } from '../../../lib/offlineCache';
+import { clearCachedAnnouncements, getCachedAnnouncements, useOnlineStatus } from '../../../lib/offlineCache';
 
 export const ResidentAnnouncementsView = () => {
-  const { announcements, comments, addComment, deleteComment } = useData();
+  const { announcements, comments, addComment, deleteComment, isLoading } = useData();
   const { currentUser } = useAuth();
   const online = useOnlineStatus();
 
-  // Fallback offline: últimos comunicados guardados
-  const cached = announcements.length === 0 ? getCachedAnnouncements(currentUser?.complex_id) : null;
+  // Caché obsoleta: con internet y carga terminada vacía, lo guardado ya no existe
+  useEffect(() => {
+    if (online && !isLoading && announcements.length === 0) {
+      clearCachedAnnouncements(currentUser?.complex_id);
+    }
+  }, [online, isLoading, announcements.length, currentUser?.complex_id]);
+
+  // Fallback offline: últimos comunicados guardados (SOLO sin internet real)
+  const cached = !online && announcements.length === 0
+    ? getCachedAnnouncements(currentUser?.complex_id)
+    : null;
   const list = announcements.length > 0 ? announcements : (cached?.items || []);
-  const showingCached = announcements.length === 0 && list.length > 0;
+  const showingCached = !online && announcements.length === 0 && list.length > 0;
+  const loading = isLoading && list.length === 0;
 
   return (
     <div className="space-y-6">
@@ -31,7 +41,9 @@ export const ResidentAnnouncementsView = () => {
           </p>
         </div>
       )}
-      {list.length === 0 ? (
+      {loading ? (
+        <Card><p className="text-xs text-slate-500 text-center py-6">Cargando comunicados…</p></Card>
+      ) : list.length === 0 ? (
         <Card><p className="text-xs text-slate-500 text-center py-6">No hay comunicados publicados aún.</p></Card>
       ) : (
         <div className="space-y-4">
