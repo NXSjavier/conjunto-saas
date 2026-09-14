@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { getApiBaseUrl, isStandalone } from '../lib/config';
 import { supabase } from '../lib/supabaseClient';
+import { setErrorSession } from '../lib/errorLog';
 import { loginDirect, registerWithCodeDirect, registerWithoutCodeDirect, resetPasswordDirect } from '../lib/supabaseRepo';
 import { initPushNotifications, cleanupPushNotifications } from '../lib/pushNotifications';
 
@@ -18,7 +19,7 @@ export const AuthProvider = ({ children }) => {
       if (!authUser?.id) return false;
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('id, name, email, role, complex_id, apartment, phone, status, face_photo, fcm_token, created_at')
+        .select('id, auth_user_id, name, email, role, complex_id, apartment, phone, status, face_photo, fcm_token, created_at')
         .eq('auth_user_id', authUser.id)
         .single();
       if (error || !profile) return false;
@@ -34,6 +35,14 @@ export const AuthProvider = ({ children }) => {
       setCurrentUser(profile);
       setCurrentComplex(complex);
       localStorage.setItem(SESSION_KEY, JSON.stringify({ user: profile, complex }));
+      try {
+        setErrorSession({
+          authUserId: profile?.auth_user_id || authUser?.id || null,
+          profileId: profile?.id || null,
+          role: profile?.role || null,
+          complexId: profile?.complex_id || complex?.id || null,
+        });
+      } catch {}
       return true;
     };
 
@@ -66,6 +75,15 @@ export const AuthProvider = ({ children }) => {
     setCurrentUser(user);
     setCurrentComplex(complex);
     localStorage.setItem(SESSION_KEY, JSON.stringify({ user, complex }));
+    // Contexto para el monitoreo de errores
+    try {
+      setErrorSession({
+        authUserId: user?.auth_user_id || null,
+        profileId: user?.id || null,
+        role: user?.role || null,
+        complexId: user?.complex_id || complex?.id || null,
+      });
+    } catch {}
     // Init push notifications after login
     if (user?.auth_user_id) {
       initPushNotifications(user.auth_user_id).catch(() => {});
@@ -107,10 +125,6 @@ export const AuthProvider = ({ children }) => {
         return { success: false, error: e.message || err.message || 'Error de conexión' };
       }
     }
-  };
-
-  const loginAsDemo = async () => {
-    await login('joelsolis17900@gmail.com', 'superadmin123');
   };
 
   const registerWithCode = async (data) => {
@@ -235,7 +249,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, currentComplex, isLoading, login, loginAsDemo, registerWithCode, registerWithoutCode, resetPassword, logout, updateUserSession, updateComplexSession }}>
+    <AuthContext.Provider value={{ currentUser, currentComplex, isLoading, login, registerWithCode, registerWithoutCode, resetPassword, logout, updateUserSession, updateComplexSession }}>
       {children}
     </AuthContext.Provider>
   );

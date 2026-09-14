@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import {
-  BookOpen, Download, ChevronDown, ChevronRight, Shield, Users, Home,
-  QrCode, Megaphone, AlertTriangle, CalendarCheck, CheckCircle2, Eye,
-  ClipboardList, UserCheck, Building, Lock, Bell, FileText, Camera,
-  Settings, BarChart3, Compass, Key, ArrowRight, Star, Zap, LayoutDashboard
+  BookOpen, Download, Shield, Users, Home, QrCode, Megaphone,
+  AlertTriangle, CalendarCheck, CheckCircle2, ClipboardList,
+  UserCheck, Building2, Lock, Bell, Key, ArrowRight, Lightbulb,
+  LayoutDashboard, Sparkles, ChevronRight, LogIn, Smartphone,
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
-import { Button } from '../../ui/Button';
-import { Card } from '../../ui/Card';
 import { generateGuidePDF } from '../../../lib/guidePdf';
 
 interface Step {
@@ -21,50 +19,51 @@ interface Step {
 interface RoleGuide {
   id: string;
   label: string;
+  tagline: string;
   icon: React.ReactNode;
   color: string;
   gradient: string;
-  sections: { title: string; steps: Step[] }[];
+  softBg: string;
+  softText: string;
+  softBorder: string;
+  sections: { title: string; subtitle: string; steps: Step[] }[];
 }
 
 const GUIDES: RoleGuide[] = [
   {
     id: 'admin',
     label: 'Administrador',
+    tagline: 'Gestiona tu conjunto de principio a fin',
     icon: <Shield className="w-5 h-5" />,
     color: 'emerald',
     gradient: 'from-emerald-500 to-teal-600',
+    softBg: 'bg-emerald-500/10',
+    softText: 'text-emerald-300',
+    softBorder: 'border-emerald-500/25',
     sections: [
       {
-        title: 'Panel Principal',
+        title: 'Primeros pasos',
+        subtitle: 'Lo básico para arrancar',
         steps: [
-          { title: 'Dashboard', description: 'Visualiza métricas en tiempo real: residentes activos, visitas del día, incidencias pendientes y reservas.', icon: <BarChart3 className="w-5 h-5" />, color: 'emerald', tip: 'Los datos se actualizan automáticamente vía Supabase Realtime.', mockup: { type: 'dashboard', label: 'Dashboard Admin', items: ['Residentes: 45', 'Visitas hoy: 12', 'Incidencias: 3', 'Reservas: 8'] } },
-          { title: 'Aprobar Residentes', description: 'Revisa solicitudes de registro. Verifica la foto, nombre y departamento. Aprueba o rechaza con un toque.', icon: <UserCheck className="w-5 h-5" />, color: 'emerald', tip: 'El residente recibe una notificación al ser aprobado.', mockup: { type: 'list', label: 'Pendientes', items: ['Juan Perez - Apt 301', 'Maria Lopez - Apt 204', 'Carlos Ruiz - Apt 102'] } },
-          { title: 'Torres y Bloques', description: 'Organiza tu conjunto en torres/bloques. Crea, edita o elimina estructuras.', icon: <Building className="w-5 h-5" />, color: 'emerald' },
+          { title: 'Mira tu Dashboard', description: 'Residentes activos, ocupación, visitas e incidencias de un vistazo.', icon: <LayoutDashboard className="w-5 h-5" />, color: 'emerald', tip: 'Las tarjetas son botones: tócalas para ir a cada sección.' },
+          { title: 'Aprueba residentes', description: 'Revisa la foto y los datos de cada solicitud y aprueba con un toque.', icon: <UserCheck className="w-5 h-5" />, color: 'emerald', tip: 'Comparte el código del conjunto solo con residentes reales.' },
         ],
       },
       {
-        title: 'Gestión de Residentes',
+        title: 'Comunicar y resolver',
+        subtitle: 'El día a día del conjunto',
         steps: [
-          { title: 'Directorio', description: 'Lista completa de residentes con foto, departamento, teléfono y estado. Busca por nombre.', icon: <Users className="w-5 h-5" />, color: 'emerald' },
-          { title: 'Departamentos', description: 'Administra apartamentos: asigna residentes, cambia estado (ocupado/disponible/mantenimiento).', icon: <Home className="w-5 h-5" />, color: 'emerald' },
-          { title: 'Crear Guardias', description: 'Registra personal de portería. Se genera contraseña temporal que debes compartir con el guarda.', icon: <Key className="w-5 h-5" />, color: 'emerald', tip: 'El guarda usa esa contraseña para su primer login.' },
+          { title: 'Publica comunicados', description: 'Avisos oficiales que llegan al instante a todos por push.', icon: <Megaphone className="w-5 h-5" />, color: 'emerald' },
+          { title: 'Atiende incidencias', description: 'Cambia el estado a medida que avanzas: abierta → en proceso → cerrada.', icon: <AlertTriangle className="w-5 h-5" />, color: 'emerald', tip: 'El residente recibe aviso automático con cada cambio.' },
+          { title: 'Aprueba reservas', description: 'Revisa fecha y horario de cada solicitud de zona común y responde.', icon: <CalendarCheck className="w-5 h-5" />, color: 'emerald' },
         ],
       },
       {
-        title: 'Comunicaciones',
+        title: 'Seguridad',
+        subtitle: 'Control total',
         steps: [
-          { title: 'Comunicados', description: 'Envía avisos a todos los residentes del conjunto. Título, contenido y publicación instantánea.', icon: <Megaphone className="w-5 h-5" />, color: 'emerald', tip: 'Los residentes reciben notificación push cuando publicas.' },
-          { title: 'Incidencias', description: 'Monitorea reportes de residentes: amenidades dañadas, fugas, ruido. Actualiza estado y prioridad.', icon: <AlertTriangle className="w-5 h-5" />, color: 'emerald' },
-          { title: 'Reservas', description: 'Aprueba o rechaza solicitudes de reserva de áreas comunes (salón, piscina, terraza).', icon: <CalendarCheck className="w-5 h-5" />, color: 'emerald' },
-        ],
-      },
-      {
-        title: 'Seguridad y Auditoría',
-        steps: [
-          { title: 'Bitácora Visitantes', description: 'Historial completo de entradas/salidas con código QR, hora y guarda que validó.', icon: <ClipboardList className="w-5 h-5" />, color: 'emerald' },
-          { title: 'Auditoría', description: 'Registro de todas las acciones realizadas en el sistema: quién, qué y cuándo.', icon: <Compass className="w-5 h-5" />, color: 'emerald', tip: 'Útil para resolver disputas o investigar incidentes.' },
-          { title: 'Reportes', description: 'Genera reportes de actividad: visitas por mes, incidencias por tipo, uso de áreas.', icon: <FileText className="w-5 h-5" />, color: 'emerald' },
+          { title: 'Revisa la bitácora', description: 'Historial de entradas y salidas con código, hora y guarda que validó.', icon: <ClipboardList className="w-5 h-5" />, color: 'emerald' },
+          { title: 'Crea guardas', description: 'Registra al personal de portería y comparte su contraseña temporal.', icon: <Key className="w-5 h-5" />, color: 'emerald', tip: 'El guarda debe cambiarla en su primer acceso.' },
         ],
       },
     ],
@@ -72,233 +71,259 @@ const GUIDES: RoleGuide[] = [
   {
     id: 'resident',
     label: 'Residente',
+    tagline: 'Todo tu apartamento en el bolsillo',
     icon: <Home className="w-5 h-5" />,
     color: 'sky',
     gradient: 'from-sky-500 to-blue-600',
+    softBg: 'bg-sky-500/10',
+    softText: 'text-sky-300',
+    softBorder: 'border-sky-500/25',
     sections: [
       {
-        title: 'Registro y Acceso',
+        title: 'Empezar',
+        subtitle: 'Tu cuenta en 3 pasos',
         steps: [
-          { title: 'Registrarse', description: 'Ingresa tus datos: nombre, email, contraseña. Selecciona tu conjunto con el código que te dio el admin.', icon: <Zap className="w-5 h-5" />, color: 'sky', tip: 'Toma una foto de rostro para verificación de seguridad.', mockup: { type: 'form', label: 'Registro', items: ['Nombre completo', 'Email y contraseña', 'Foto de rostro', 'Codigo del conjunto'] } },
-          { title: 'Esperar Aprobación', description: 'El administrador revisa tu solicitud. Recibirás una notificación cuando sea aprobada.', icon: <Lock className="w-5 h-5" />, color: 'sky' },
-          { title: 'Iniciar Sesión', description: 'Usa tu email y contraseña. Si olvidaste tu contraseña, usa la opción de recuperación.', icon: <Key className="w-5 h-5" />, color: 'sky' },
+          { title: 'Regístrate', description: 'Nombre, email, contraseña, foto de rostro y el código de tu conjunto.', icon: <LogIn className="w-5 h-5" />, color: 'sky', tip: 'El código te lo entrega tu administrador.' },
+          { title: 'Espera la aprobación', description: 'El admin verifica tus datos. Te avisaremos cuando puedas entrar.', icon: <Lock className="w-5 h-5" />, color: 'sky' },
+          { title: 'Activa notificaciones', description: 'Acepta el permiso para recibir avisos aunque la app esté cerrada.', icon: <Bell className="w-5 h-5" />, color: 'sky', tip: 'Sin esto no te llegarán visitas ni comunicados.' },
         ],
       },
       {
-        title: 'Gestión de Visitas',
+        title: 'Tu día a día',
+        subtitle: 'Lo que más usarás',
         steps: [
-          { title: 'Generar Código de Visita', description: 'Ingresa datos del visitante: nombre, cédula, motivo. Se genera un código QR único.', icon: <QrCode className="w-5 h-5" />, color: 'sky', tip: 'Comparte el código con tu visitante por WhatsApp.' },
-          { title: 'Historial de Visitas', description: 'Revisa todas tus visitas: entradas, salidas, pendientes. Cancela visitas que ya no aplican.', icon: <Eye className="w-5 h-5" />, color: 'sky' },
-          { title: 'En la Garita', description: 'El visitante muestra el código al guarda. El guarda lo escanea y registra entrada/salida.', icon: <Shield className="w-5 h-5" />, color: 'sky' },
-        ],
-      },
-      {
-        title: 'Servicios del Conjunto',
-        steps: [
-          { title: 'Reservar Áreas', description: 'Selecciona el área (salón, piscina, terraza), fecha y hora. Espera aprobación del admin.', icon: <CalendarCheck className="w-5 h-5" />, color: 'sky', tip: 'Puedes ver disponibilidad en tiempo real.' },
-          { title: 'Reportar Incidencia', description: 'Describe el problema, adjunta foto si es posible. El admin recibe notificación.', icon: <AlertTriangle className="w-5 h-5" />, color: 'sky' },
-          { title: 'Comunicados', description: 'Lee avisos del administrador: mantenimientos, eventos, cambios de horario.', icon: <Megaphone className="w-5 h-5" />, color: 'sky' },
+          { title: 'Genera pases de visita', description: 'Crea un código único por visitante y compártelo por WhatsApp.', icon: <QrCode className="w-5 h-5" />, color: 'sky', tip: 'Te avisamos cuando tu visita ingresa y cuando sale.' },
+          { title: 'Reserva zonas comunes', description: 'Elige área, fecha y hora. Revisa que no se cruce con otra reserva.', icon: <CalendarCheck className="w-5 h-5" />, color: 'sky' },
+          { title: 'Reporta incidencias', description: 'Describe el problema y adjunta foto si puedes. El admin lo atiende.', icon: <AlertTriangle className="w-5 h-5" />, color: 'sky' },
+          { title: 'Lee los comunicados', description: 'Avisos oficiales del conjunto, con comentarios en vivo.', icon: <Megaphone className="w-5 h-5" />, color: 'sky' },
         ],
       },
     ],
   },
   {
     id: 'guard',
-    label: 'Guardia de Garita',
+    label: 'Guarda de portería',
+    tagline: 'Control de acceso rápido y seguro',
     icon: <Shield className="w-5 h-5" />,
     color: 'amber',
     gradient: 'from-amber-500 to-orange-600',
+    softBg: 'bg-amber-500/10',
+    softText: 'text-amber-300',
+    softBorder: 'border-amber-500/25',
     sections: [
       {
-        title: 'Primer Acceso',
+        title: 'Empezar',
+        subtitle: 'Tu primer turno',
         steps: [
-          { title: 'Credenciales', description: 'El admin te proporciona email y contraseña temporal. Úsalos para tu primer ingreso.', icon: <Key className="w-5 h-5" />, color: 'amber', tip: 'Cambia tu contraseña después del primer login.' },
-          { title: 'Panel de Garita', description: 'Tu pantalla principal muestra visitas pendientes del día y estadísticas rápidas.', icon: <LayoutDashboard className="w-5 h-5" />, color: 'amber', mockup: { type: 'dashboard', label: 'Panel Garita', items: ['Visitas hoy: 8', 'Pendientes: 3', 'Completadas: 5', 'Hora: 08:30 PM'] } },
+          { title: 'Ingresa con tu contraseña temporal', description: 'El admin te entrega email y contraseña para tu primer acceso.', icon: <Key className="w-5 h-5" />, color: 'amber', tip: 'Cámbiala apenas entres, desde tu panel.' },
         ],
       },
       {
-        title: 'Control de Acceso',
+        title: 'Control de acceso',
+        subtitle: 'Cada visita en 3 toques',
         steps: [
-          { title: 'Validar Código', description: 'Pide al visitante su código QR. Escanéalo o ingrésalo manualmente para validar.', icon: <QrCode className="w-5 h-5" />, color: 'amber', tip: 'Si el código es inválido, la app te lo indica inmediatamente.', mockup: { type: 'validator', label: 'Validar Visita', items: ['Escanear QR', 'Ingreso manual', 'Estado: VALIDO', 'Visitante: Ana Garcia'] } },
-          { title: 'Registrar Entrada', description: 'Al validar, registra la hora de entrada. El residente recibe notificación.', icon: <CheckCircle2 className="w-5 h-5" />, color: 'amber' },
-          { title: 'Registrar Salida', description: 'Cuando el visitante se va, registra la salida. Se actualiza el historial.', icon: <ArrowRight className="w-5 h-5" />, color: 'amber' },
+          { title: 'Valida el código', description: 'Pide el código al visitante e ingrésalo en el verificador.', icon: <QrCode className="w-5 h-5" />, color: 'amber', tip: 'Si es inválido, la app te lo indica al instante.' },
+          { title: 'Registra la entrada', description: 'Confirma el ingreso. El residente recibe aviso automático.', icon: <CheckCircle2 className="w-5 h-5" />, color: 'amber' },
+          { title: 'Registra la salida', description: 'Cuando se va, marca la salida desde "Dentro del conjunto".', icon: <ArrowRight className="w-5 h-5" />, color: 'amber' },
         ],
       },
       {
-        title: 'Directorio',
+        title: 'Si no hay código',
+        subtitle: 'Plan B',
         steps: [
-          { title: 'Buscar Residente', description: 'Accede al directorio telefónico. Busca por nombre o departamento para contactar al residente.', icon: <Users className="w-5 h-5" />, color: 'amber', tip: 'Útil cuando un visitante no tiene código.' },
-          { title: 'Verificar Identidad', description: 'Visualiza la foto del residente para verificar identidad cuando sea necesario.', icon: <Camera className="w-5 h-5" />, color: 'amber' },
+          { title: 'Usa el directorio', description: 'Busca al residente por nombre o apartamento y confirma la visita por teléfono.', icon: <Users className="w-5 h-5" />, color: 'amber' },
         ],
       },
     ],
   },
 ];
 
-const colorMap: Record<string, { bg: string; text: string; border: string; ring: string }> = {
-  emerald: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20', ring: 'ring-emerald-500/30' },
-  sky: { bg: 'bg-sky-500/10', text: 'text-sky-400', border: 'border-sky-500/20', ring: 'ring-sky-500/30' },
-  amber: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20', ring: 'ring-amber-500/30' },
+const ESSENTIAL_TIPS = [
+  { icon: <Bell className="w-5 h-5" />, title: 'Notificaciones activadas', text: 'Sin permiso de notificaciones no llegan visitas ni avisos. Actívalas desde el banner verde.', color: 'emerald' as const },
+  { icon: <Smartphone className="w-5 h-5" />, title: 'Instala la app', text: 'Desde Chrome: menú ⋮ → Instalar app. Funciona a pantalla completa, como nativa.', color: 'sky' as const },
+  { icon: <Lock className="w-5 h-5" />, title: 'Cuida tu cuenta', text: 'Nunca compartas tu contraseña. Cierra sesión si usas un equipo prestado.', color: 'amber' as const },
+];
+
+const tipStyles: Record<string, string> = {
+  emerald: 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300',
+  sky: 'bg-sky-500/10 border-sky-500/25 text-sky-300',
+  amber: 'bg-amber-500/10 border-amber-500/25 text-amber-300',
 };
 
 export const GuideView: React.FC = () => {
   const { currentUser } = useAuth();
-  const currentRole = currentUser?.role || 'admin';
-  const [expandedGuide, setExpandedGuide] = useState<string | null>(currentRole);
-  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const defaultRole = ['admin', 'resident', 'guard'].includes(currentUser?.role || '') ? currentUser!.role : 'resident';
+  const [activeRole, setActiveRole] = useState<string>(defaultRole);
+  const [downloading, setDownloading] = useState(false);
+  const guide = GUIDES.find((g) => g.id === activeRole) || GUIDES[1];
+  const totalSteps = guide.sections.reduce((a, s) => a + s.steps.length, 0);
+  let stepCounter = 0;
 
-  const handleDownloadPDF = async (role?: string) => {
-    const targetRole = role || currentRole;
-    const guide = GUIDES.find((g) => g.id === targetRole) || GUIDES[0];
-    generateGuidePDF(guide);
-  };
-
-  const toggleGuide = (id: string) => {
-    setExpandedGuide(expandedGuide === id ? null : id);
-    setExpandedSection(null);
-  };
-
-  const toggleSection = (key: string) => {
-    setExpandedSection(expandedSection === key ? null : key);
+  const handleDownload = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await generateGuidePDF(guide);
+    } catch (e) {
+      console.error('Error generando PDF:', e);
+      alert('No se pudo generar el PDF. Intenta de nuevo o revisa tu conexión.');
+    } finally {
+      setDownloading(false);
+    }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <BookOpen className="w-6 h-6 text-emerald-500" />
-            Guía de Uso
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Aprende a usar Conjuntos App paso a paso. Selecciona tu rol para ver instrucciones personalizadas.
+    <div className="space-y-6 animate-enter">
+      {/* ═══ PORTADA ═══ */}
+      <div className={`relative overflow-hidden rounded-3xl bg-gradient-to-br ${guide.gradient} p-6 sm:p-10 shadow-2xl`}>
+        {/* Decoración */}
+        <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-white/15 blur-2xl" />
+        <div className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full bg-black/15 blur-2xl" />
+        <div className="absolute top-6 right-8 hidden sm:flex w-24 h-24 rounded-3xl bg-white/15 backdrop-blur items-center justify-center rotate-12">
+          <Building2 className="w-12 h-12 text-white/90" />
+        </div>
+
+        <div className="relative">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center text-white shadow-lg">
+              <BookOpen className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/80">Residex</p>
+              <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight leading-none">Guía de uso</h1>
+            </div>
+          </div>
+          <p className="text-white/90 text-sm sm:text-base font-medium mt-3 max-w-md">
+            Solo lo esencial para dominar la app desde hoy. Elige tu rol:
           </p>
+
+          {/* Tabs de rol */}
+          <div className="flex flex-wrap gap-2 mt-5">
+            {GUIDES.map((g) => {
+              const active = g.id === activeRole;
+              return (
+                <button
+                  key={g.id}
+                  onClick={() => setActiveRole(g.id)}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold transition-all cursor-pointer ${
+                    active
+                      ? 'bg-white text-slate-900 shadow-xl scale-[1.02]'
+                      : 'bg-white/15 text-white hover:bg-white/25 backdrop-blur'
+                  }`}
+                >
+                  {g.icon}
+                  {g.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 mt-5">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-white/90 bg-black/20 rounded-full px-3 py-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              {guide.sections.length} capítulos · {totalSteps} pasos · 5 min
+            </span>
+            <button
+              onClick={handleDownload}
+              disabled={downloading}
+              className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-900 bg-white rounded-full px-3 py-1.5 hover:bg-white/90 transition-colors cursor-pointer shadow disabled:opacity-70"
+            >
+              <Download className={`w-3.5 h-3.5 ${downloading ? 'animate-bounce' : ''}`} />
+              {downloading ? 'Generando...' : 'Descargar PDF'}
+            </button>
+          </div>
         </div>
-        <Button
-          onClick={() => handleDownloadPDF()}
-          icon={<Download className="w-4 h-4" />}
-          className="shrink-0"
-        >
-          Descargar PDF
-        </Button>
       </div>
 
-      {/* Role Guides */}
-      <div className="space-y-4">
-        {GUIDES.map((guide) => {
-          const isExpanded = expandedGuide === guide.id;
-          const colors = colorMap[guide.color];
-          return (
-            <Card key={guide.id} className="overflow-hidden">
-              {/* Guide Header */}
-              <button
-                onClick={() => toggleGuide(guide.id)}
-                className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl ${colors.bg} ${colors.border} border flex items-center justify-center ${colors.text}`}>
-                    {guide.icon}
-                  </div>
-                  <div className="text-left">
-                    <h3 className="text-sm font-bold text-slate-900">{guide.label}</h3>
-                    <p className="text-xs text-slate-500">{guide.sections.length} secciones • {guide.sections.reduce((a, s) => a + s.steps.length, 0)} pasos</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDownloadPDF(guide.id); }}
-                    className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-                    title={`Descargar guía ${guide.label}`}
-                  >
-                    <Download className="w-4 h-4" />
-                  </button>
-                  {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronRight className="w-5 h-5 text-slate-400" />}
-                </div>
-              </button>
+      {/* Tagline del rol */}
+      <div className="flex items-center gap-2 -mb-2">
+        <span className={`w-8 h-8 rounded-xl ${guide.softBg} ${guide.softBorder} border flex items-center justify-center ${guide.softText}`}>
+          {guide.icon}
+        </span>
+        <p className="text-sm font-bold text-slate-200">{guide.tagline}</p>
+      </div>
 
-              {/* Sections */}
-              {isExpanded && (
-                <div className="border-t border-slate-100">
-                  {guide.sections.map((section, si) => {
-                    const sectionKey = `${guide.id}-${si}`;
-                    const isSectionOpen = expandedSection === sectionKey;
-                    return (
-                      <div key={si} className="border-b border-slate-50 last:border-b-0">
-                        <button
-                          onClick={() => toggleSection(sectionKey)}
-                          className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50/50 transition-colors cursor-pointer"
-                        >
-                          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">{section.title}</span>
-                          {isSectionOpen ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                        </button>
-                        {isSectionOpen && (
-                          <div className="px-4 pb-4 space-y-3">
-                            {section.steps.map((step, sti) => {
-                              const stepColors = colorMap[step.color];
-                              return (
-                                <div key={sti} className="flex gap-3 p-3 rounded-xl bg-slate-50/80 border border-slate-100">
-                                  <div className={`w-9 h-9 rounded-lg ${stepColors.bg} ${stepColors.border} border flex items-center justify-center ${stepColors.text} shrink-0 mt-0.5`}>
-                                    {step.icon}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="text-sm font-bold text-slate-800">{step.title}</h4>
-                                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{step.description}</p>
-                                    {step.tip && (
-                                      <div className={`mt-2 flex items-start gap-1.5 text-xs ${stepColors.text}`}>
-                                        <Star className="w-3 h-3 mt-0.5 shrink-0" />
-                                        <span className="font-medium">{step.tip}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="text-xs font-bold text-slate-300 shrink-0">
-                                    {String(sti + 1).padStart(2, '0')}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+      {/* ═══ CAPÍTULOS ═══ */}
+      {guide.sections.map((section, si) => (
+        <section key={si} className="rounded-3xl bg-slate-900 border border-slate-700/60 overflow-hidden shadow-card">
+          {/* Encabezado del capítulo */}
+          <div className="flex items-center gap-4 px-5 sm:px-6 pt-5">
+            <span className={`text-4xl sm:text-5xl font-extrabold bg-gradient-to-br ${guide.gradient} bg-clip-text text-transparent leading-none tabular-nums`}>
+              {String(si + 1).padStart(2, '0')}
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-extrabold text-white truncate">{section.title}</h2>
+              <p className="text-xs text-slate-400 font-medium">{section.subtitle} · {section.steps.length} pasos</p>
+            </div>
+          </div>
+
+          {/* Pasos */}
+          <div className="p-4 sm:p-5 space-y-3">
+            {section.steps.map((step) => {
+              stepCounter += 1;
+              return (
+                <div
+                  key={stepCounter}
+                  className="flex gap-3 sm:gap-4 p-4 rounded-2xl bg-slate-950/60 border border-slate-800 hover:border-slate-600 transition-colors"
+                >
+                  <div className="flex flex-col items-center gap-1 shrink-0">
+                    <span className={`w-10 h-10 rounded-2xl ${guide.softBg} ${guide.softBorder} border flex items-center justify-center ${guide.softText}`}>
+                      {step.icon}
+                    </span>
+                    <span className="text-[10px] font-extrabold text-slate-500 tabular-nums">PASO {stepCounter}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm sm:text-[15px] font-bold text-white">{step.title}</h3>
+                    <p className="text-xs sm:text-sm text-slate-300 mt-1 leading-relaxed">{step.description}</p>
+                    {step.tip && (
+                      <div className="mt-2.5 flex items-start gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 px-3 py-2">
+                        <Lightbulb className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+                        <p className="text-[11px] sm:text-xs font-medium text-amber-200 leading-relaxed">{step.tip}</p>
                       </div>
-                    );
-                  })}
+                    )}
+                  </div>
                 </div>
-              )}
-            </Card>
-          );
-        })}
+              );
+            })}
+          </div>
+        </section>
+      ))}
+
+      {/* ═══ LO ESENCIAL ═══ */}
+      <div className="rounded-3xl overflow-hidden border border-slate-700/60">
+        <div className={`bg-gradient-to-r ${guide.gradient} px-5 sm:px-6 py-4`}>
+          <h3 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-2">
+            <Sparkles className="w-4 h-4" />
+            No olvides lo esencial
+          </h3>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 sm:p-5 bg-slate-900">
+          {ESSENTIAL_TIPS.map((t) => (
+            <div key={t.title} className={`rounded-2xl border p-4 ${tipStyles[t.color]}`}>
+              <div className="flex items-center gap-2">
+                {t.icon}
+                <p className="text-xs sm:text-sm font-extrabold text-white">{t.title}</p>
+              </div>
+              <p className="text-[11px] sm:text-xs text-slate-300 mt-1.5 leading-relaxed">{t.text}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Quick Tips */}
-      <Card className="p-5 bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200">
-        <h3 className="text-sm font-bold text-emerald-800 flex items-center gap-2 mb-3">
-          <Zap className="w-4 h-4" />
-          Consejos Rápidos
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="flex items-start gap-2">
-            <Bell className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs font-bold text-emerald-800">Notificaciones</p>
-              <p className="text-[11px] text-emerald-600">Activa las notificaciones del navegador para recibir alertas en tiempo real.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Settings className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs font-bold text-emerald-800">Actualizaciones</p>
-              <p className="text-[11px] text-emerald-600">La app se actualiza automáticamente. Usa Ctrl+Shift+R si ves datos desactualizados.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Lock className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs font-bold text-emerald-800">Seguridad</p>
-              <p className="text-[11px] text-emerald-600">Nunca compartas tu contraseña. Los guardias deben cambiarla en su primer acceso.</p>
-            </div>
-          </div>
-        </div>
-      </Card>
+      {/* Siguiente rol */}
+      <button
+        onClick={() => {
+          const idx = GUIDES.findIndex((g) => g.id === activeRole);
+          setActiveRole(GUIDES[(idx + 1) % GUIDES.length].id);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        className="w-full flex items-center justify-between p-4 rounded-2xl bg-slate-900 border border-slate-700/60 hover:border-slate-500 transition-colors cursor-pointer group"
+      >
+        <span className="text-xs sm:text-sm font-bold text-slate-300">
+          Ver guía de: <span className="text-white">{GUIDES[(GUIDES.findIndex((g) => g.id === activeRole) + 1) % GUIDES.length].label}</span>
+        </span>
+        <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-white group-hover:translate-x-1 transition-all" />
+      </button>
     </div>
   );
 };

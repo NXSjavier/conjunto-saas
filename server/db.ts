@@ -205,12 +205,12 @@ export async function getDatabase(): Promise<DatabaseService> {
       [complexId, 'Residencial Las Palmas', 'LP-2026-X8T5', 'Av. Las Palmas #450, Torre A', 'pro', 'active', expiry, 'active', now]
     );
 
-    // Seed a single real super admin account for the live testing user
-    // Use OR REPLACE so a stale DB with an older super-admin row does not crash startup.
+    // Seed de un super admin inicial (credenciales de ejemplo, sin datos reales)
+    // El cliente crea su propio super admin desde la pantalla de setup inicial.
     db.run(
       `INSERT OR REPLACE INTO profiles (id, name, email, password, role, complex_id, apartment, phone, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['u-super', 'Joel Solis', 'joelsolis17900@gmail.com', 'superadmin123', 'super_admin', null, null, '+57 300 000 0000', 'active', now]
+      ['u-super', 'Administrador Inicial', 'admin@residex.app', 'cambiar-esta-clave', 'super_admin', null, null, null, 'active', now]
     );
 
     // Keep the base residential setup without demo users and demo data
@@ -240,14 +240,14 @@ export async function getDatabase(): Promise<DatabaseService> {
     db.run(
       `INSERT INTO audits (id, complex_id, user_id, user_name, action, entity, entity_id, details, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['aud-1', complexId, 'u-super', 'Joel Solis', 'account_initialized', 'profile', 'u-super', JSON.stringify({ email: 'joelsolis17900@gmail.com' }), now]
+      ['aud-1', complexId, 'u-super', 'Administrador Inicial', 'account_initialized', 'profile', 'u-super', JSON.stringify({ email: 'admin@residex.app' }), now]
     );
 
     save();
   }
 
-  const superAdminEmail = 'joelsolis17900@gmail.com';
-  const superAdminPassword = 'superadmin123';
+  const superAdminEmail = 'admin@residex.app';
+  const superAdminPassword = 'cambiar-esta-clave';
 
   const queryRows = <T = any>(sql: string, params: any[] = []): T[] => {
     const stmt = db.prepare(sql);

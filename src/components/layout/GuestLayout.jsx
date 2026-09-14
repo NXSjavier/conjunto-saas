@@ -24,10 +24,13 @@ import {
   Star,
   Zap,
   Crown,
+  LogIn,
+  UserPlus,
 } from 'lucide-react';
 import { getApiBaseUrl, isStandalone } from '../../lib/config';
 import { supabase } from '../../lib/supabaseClient';
 import { fetchComplexesDirect } from '../../lib/supabaseRepo';
+import { LegalModal } from '../legal/LegalModal';
 
 const FEATURES = [
   { icon: Shield, text: 'Control de acceso con QR y código' },
@@ -156,6 +159,10 @@ export default function GuestLayout({ onLogin }) {
   const [recoveryStep, setRecoveryStep] = useState(1);
   const [recoveryLoading, setRecoveryLoading] = useState(false);
 
+  // Consentimiento de datos personales (LOPDP Ecuador)
+  const [consent, setConsent] = useState(false);
+  const [legalOpen, setLegalOpen] = useState(null); // 'privacy' | 'terms' | null
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setFlash(null);
@@ -174,6 +181,10 @@ export default function GuestLayout({ onLogin }) {
   const handleRegisterWithCode = async (e) => {
     e.preventDefault();
     setFlash(null);
+    if (!consent) {
+      setFlash({ type: 'error', message: 'Debes aceptar el tratamiento de tus datos personales para continuar.' });
+      return;
+    }
     setRegCodeLoading(true);
     const result = await registerWithCode({
       name: regCodeName,
@@ -197,6 +208,10 @@ export default function GuestLayout({ onLogin }) {
     e.preventDefault();
     if (!regNoComplex) {
       setFlash({ type: 'error', message: 'Selecciona un conjunto residencial.' });
+      return;
+    }
+    if (!consent) {
+      setFlash({ type: 'error', message: 'Debes aceptar el tratamiento de tus datos personales para continuar.' });
       return;
     }
     setFlash(null);
@@ -237,10 +252,31 @@ export default function GuestLayout({ onLogin }) {
     }
   };
 
-  const tabs = [
-    { id: 'login', label: 'Iniciar Sesión' },
-    { id: 'register_code', label: 'Registrarse con Código' },
-    { id: 'register_no_code', label: 'Registrarse sin Código' },
+  const consentBlock = (
+    <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-900/60 border border-slate-800 cursor-pointer">
+      <input
+        type="checkbox"
+        checked={consent}
+        onChange={(e) => setConsent(e.target.checked)}
+        className="mt-0.5 w-4 h-4 rounded accent-emerald-500 cursor-pointer"
+      />
+      <span className="text-[11px] text-slate-400 leading-relaxed">
+        Acepto el tratamiento de mis datos personales según la{' '}
+        <button type="button" onClick={() => setLegalOpen('privacy')} className="text-emerald-400 hover:text-emerald-300 underline cursor-pointer">
+          Política de Privacidad
+        </button>{' '}
+        y los{' '}
+        <button type="button" onClick={() => setLegalOpen('terms')} className="text-emerald-400 hover:text-emerald-300 underline cursor-pointer">
+          Términos y Condiciones
+        </button>
+        .
+      </span>
+    </label>
+  );
+
+  const tabs = [{ id: 'login', label: 'Iniciar Sesión', icon: LogIn },
+    { id: 'register_code', label: 'Registrarse con Código', icon: KeyRound },
+    { id: 'register_no_code', label: 'Registrarse sin Código', icon: UserPlus },
   ];
 
   return (
@@ -253,7 +289,7 @@ export default function GuestLayout({ onLogin }) {
               <Building2 className="w-7 h-7 text-slate-950" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white">Conjuntos App</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-white">Residex</h1>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">SaaS Premium</p>
             </div>
           </div>
@@ -320,22 +356,26 @@ export default function GuestLayout({ onLogin }) {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-1 bg-slate-900/80 rounded-xl p-1 mb-6 border border-slate-700 shadow-lg shadow-slate-950/50">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  setFlash(null);
-                }}
-                className={`flex-1 py-2 px-2 text-[10px] sm:text-xs font-medium rounded-lg transition-all cursor-pointer text-center leading-snug ${
-                  activeTab === tab.id
-                    ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-white shadow-lg shadow-cyan-500/20'
-                    : 'text-slate-300 hover:text-white'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setFlash(null);
+                  }}
+                  className={`flex-1 py-2.5 min-h-[44px] px-2 text-[9px] sm:text-xs font-medium rounded-lg transition-all cursor-pointer text-center leading-snug flex flex-col sm:flex-row items-center justify-center gap-1 ${
+                    activeTab === tab.id
+                      ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-white shadow-lg shadow-cyan-500/20'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                  <span className="whitespace-nowrap">{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
 
           {flash && (
@@ -459,6 +499,7 @@ export default function GuestLayout({ onLogin }) {
                 value={regCodePhone}
                 onChange={(e) => setRegCodePhone(e.target.value)}
               />
+              {consentBlock}
               <Button
                 type="submit"
                 className="w-full"
@@ -561,6 +602,7 @@ export default function GuestLayout({ onLogin }) {
                   />
                 </label>
               </div>
+              {consentBlock}
               <Button
                 type="submit"
                 className="w-full"
@@ -639,6 +681,20 @@ export default function GuestLayout({ onLogin }) {
           )}
         </form>
       </Modal>
+
+      {/* Legal footer */}
+      <p className="text-center text-[11px] text-slate-600 mt-4">
+        <button type="button" onClick={() => setLegalOpen('privacy')} className="hover:text-emerald-400 underline cursor-pointer">
+          Política de Privacidad
+        </button>
+        <span className="mx-1.5">·</span>
+        <button type="button" onClick={() => setLegalOpen('terms')} className="hover:text-emerald-400 underline cursor-pointer">
+          Términos y Condiciones
+        </button>
+      </p>
+
+      {/* Legal modal */}
+      <LegalModal type={legalOpen} onClose={() => setLegalOpen(null)} />
     </div>
   );
 }

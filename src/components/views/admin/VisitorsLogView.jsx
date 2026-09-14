@@ -99,16 +99,17 @@ export const VisitorsLogView = () => {
         />
       ) : (
         <Card>
-          <div className="overflow-x-auto -mx-5">
+          {/* Desktop: tabla */}
+          <div className="hidden lg:block overflow-x-auto">
             <table className="w-full min-w-[560px] text-xs">
               <thead>
                 <tr className="border-b border-slate-800/80">
                   <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider">Código</th>
                   <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider">Visitante</th>
-                  <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider hidden sm:table-cell">Destino</th>
-                  <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider hidden md:table-cell">Residente</th>
+                  <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider">Destino</th>
+                  <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider">Residente</th>
                   <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider">Estado</th>
-                  <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider hidden lg:table-cell">Fecha</th>
+                  <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider">Fecha</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -118,23 +119,55 @@ export const VisitorsLogView = () => {
                       <span className="font-mono font-bold text-emerald-400">{v.code}</span>
                     </td>
                     <td className="py-3 px-5 text-slate-200 font-medium">{v.visitor_name}</td>
-                    <td className="py-3 px-5 text-slate-400 hidden sm:table-cell">
+                    <td className="py-3 px-5 text-slate-400">
                       <div className="flex items-center gap-1.5">
                         <ArrowRight className="w-3 h-3 text-slate-500" />
                         {v.destination_apartment || '-'}
                       </div>
                     </td>
-                    <td className="py-3 px-5 text-slate-400 hidden md:table-cell">{v.resident_name}</td>
+                    <td className="py-3 px-5 text-slate-400">{v.resident_name || '-'}</td>
                     <td className="py-3 px-5">
                       <Badge variant={STATUS_COLORS[v.status] || 'slate'} size="sm">
                         {STATUS_LABELS[v.status] || v.status}
                       </Badge>
                     </td>
-                    <td className="py-3 px-5 text-slate-500 hidden lg:table-cell">{formatDate(v.created_at)}</td>
+                    <td className="py-3 px-5 text-slate-500">{formatDate(v.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile: cards */}
+          <div className="lg:hidden space-y-2">
+            {filtered.map((v) => (
+              <div key={v.id} className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono font-bold text-emerald-400 text-sm">{v.code}</span>
+                  <Badge variant={STATUS_COLORS[v.status] || 'slate'} size="sm">
+                    {STATUS_LABELS[v.status] || v.status}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Visitante</p>
+                  <p className="text-sm font-semibold text-slate-200">{v.visitor_name}</p>
+                </div>
+                {v.destination_apartment && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-slate-500">Destino:</span>
+                    <span className="text-xs text-slate-400">{v.destination_apartment}</span>
+                    <ArrowRight className="w-3 h-3 text-slate-500" />
+                  </div>
+                )}
+                {v.resident_name && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-slate-500">Residente:</span>
+                    <span className="text-xs text-slate-400">{v.resident_name}</span>
+                  </div>
+                )}
+                <p className="text-[10px] text-slate-500">{formatDate(v.created_at)}</p>
+              </div>
+            ))}
           </div>
         </Card>
       )}

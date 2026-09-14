@@ -1,28 +1,198 @@
 @import "tailwindcss";
 
-:root {
-  color: #0f172a;
-  background: #f0fdf4;
-  font-family: Inter, "Segoe UI", sans-serif;
+@theme {
+  /* ── Marca ─────────────────────────────────────────── */
+  --color-brand-50: #ecfdf5;
+  --color-brand-100: #d1fae5;
+  --color-brand-200: #a7f3d0;
+  --color-brand-300: #6ee7b7;
+  --color-brand-400: #34d399;
+  --color-brand-500: #10b981;
+  --color-brand-600: #059669;
+  --color-brand-700: #047857;
+  --color-brand-800: #065f46;
+  --color-brand-900: #064e3b;
+
+  /* ── Superficies ───────────────────────────────────── */
+  --color-surface-950: #020617;
+  --color-surface-900: #0b1220;
+  --color-surface-850: #0f172a;
+  --color-surface-800: #1e293b;
+
+  /* ── Tipografía ────────────────────────────────────── */
+  --font-sans: "Plus Jakarta Sans", Inter, system-ui, sans-serif;
+
+  /* ── Radios ────────────────────────────────────────── */
+  --radius-control: 0.875rem;
+  --radius-card: 1.25rem;
+  --radius-panel: 1.75rem;
+
+  /* ── Sombras ───────────────────────────────────────── */
+  --shadow-card: 0 1px 2px rgba(2, 6, 23, 0.4), 0 8px 24px -12px rgba(2, 6, 23, 0.7);
+  --shadow-card-hover: 0 2px 4px rgba(2, 6, 23, 0.4), 0 18px 40px -16px rgba(2, 6, 23, 0.8);
+  --shadow-brand: 0 10px 30px -10px rgba(16, 185, 129, 0.5);
+
+  /* ── Animaciones ───────────────────────────────────── */
+  --animate-in: fade-in 0.2s ease-out, zoom-in-95 0.2s ease-out;
 }
 
-* {
-  box-sizing: border-box;
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-html, body, #root {
-  margin: 0;
-  min-height: 100%;
-  min-width: 100%;
+@keyframes zoom-in-95 {
+  from { opacity: 0; transform: scale(0.96) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-body {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 45%, #ecfdf5 100%);
-  color: #0f172a;
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-button, input, select, textarea {
-  font: inherit;
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes slide-down-sm {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    color: #e2e8f0;
+    background: #020617;
+  }
+
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0;
+    min-height: 100%;
+    min-width: 100%;
+  }
+
+  body {
+    min-height: 100vh;
+    font-family: var(--font-sans);
+    color: #e2e8f0;
+    background:
+      radial-gradient(1200px 600px at 100% -10%, rgba(16, 185, 129, 0.12), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(16, 185, 129, 0.08), transparent 55%),
+      linear-gradient(160deg, #020617 0%, #0b1220 55%, #020617 100%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  /* Scrollbars discretas y consistentes */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(51, 65, 85, 0.8) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: rgba(51, 65, 85, 0.8);
+    border-radius: 999px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::selection {
+    background: rgba(16, 185, 129, 0.3);
+    color: #fff;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .animate-enter {
+    animation: var(--animate-in);
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.25s ease-out;
+  }
+
+  .animate-slide-down {
+    animation: slide-down 0.25s ease-out;
+  }
+
+  .animate-slide-down-sm {
+    animation: slide-down-sm 0.2s ease-out;
+  }
+
+  /* Safe area insets para dispositivos con notch/corte */
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .safe-area-inset-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Touch targets mínimos recomendados por WCAG */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Evitar zoom en inputs cuando el tamaño de fuente es < 16px */
+  input[type="email"],
+  input[type="password"],
+  input[type="tel"],
+  input[type="text"],
+  input[type="number"],
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
+  @media (max-width: 359px) {
+    input[type="email"],
+    input[type="password"],
+    input[type="tel"],
+    input[type="text"],
+    input[type="number"],
+    textarea,
+    select {
+      font-size: 16px;
+    }
+  }
+}

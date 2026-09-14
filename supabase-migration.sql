@@ -1,5 +1,5 @@
 -- ============================================
--- CONJUNTOS APP - Migración a Supabase
+-- Residex - Migración a Supabase
 -- Ejecutar este script en el SQL Editor de Supabase
 -- ============================================
 
@@ -269,17 +269,17 @@ VALUES (
   NOW()
 );
 
--- Super Admin
+-- Super Admin (ejemplo; el cliente crea el suyo desde el setup inicial de la app)
 INSERT INTO profiles (id, name, email, password, role, complex_id, apartment, phone, status, created_at)
 VALUES (
   'u-super',
-  'Joel Solis',
-  'joelsolis17900@gmail.com',
-  'superadmin123',
+  'Administrador Inicial',
+  'admin@residex.app',
+  'cambiar-esta-clave',
   'super_admin',
   NULL,
   NULL,
-  '+57 300 000 0000',
+  NULL,
   'active',
   NOW()
 );
@@ -308,10 +308,10 @@ VALUES (
   'aud-1',
   'c101-palmas-2026',
   'u-super',
-  'Joel Solis',
+  'Administrador Inicial',
   'account_initialized',
   'profile',
   'u-super',
-  '{"email": "joelsolis17900@gmail.com"}',
+  '{"email": "admin@residex.app"}',
   NOW()
 );

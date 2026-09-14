@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
-import { NotificationBell } from '../ui/NotificationBell';
 import { cn, daysUntilExpiry } from '../../lib/utils';
-import { enablePushFromGesture, getPushStatus, initPushNotifications, sendPushToUser } from '../../lib/pushNotifications';
+import { SupportModal } from '../ui/SupportModal';
+import { LegalModal } from '../legal/LegalModal';
+import { useOnlineStatus } from '../../lib/offlineCache';
+import { enablePushFromGesture, getPushStatus, initPushNotifications, sendPushToUser, getPushDebugInfo } from '../../lib/pushNotifications';
 import {
   Building2,
   LayoutDashboard,
@@ -26,6 +28,9 @@ import {
   Lock,
   BookOpen,
   Bell,
+  LifeBuoy,
+  CreditCard,
+  WifiOff,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -35,6 +40,7 @@ const NAV_ITEMS = {
     { id: 'super_admins', label: 'Administradores', icon: Shield },
     { id: 'super_users', label: 'Usuarios', icon: Users },
     { id: 'super_subscriptions', label: 'Suscripciones', icon: FileText },
+    { id: 'notifications', label: 'Notificaciones', icon: Bell, badge: 'unread' },
     { id: 'app_guide', label: 'Guía de Uso', icon: BookOpen },
   ],
   admin: [
@@ -49,6 +55,8 @@ const NAV_ITEMS = {
     { id: 'admin_guards', label: 'Guardas', icon: Shield },
     { id: 'admin_audits', label: 'Auditorías', icon: ClipboardList },
     { id: 'admin_reports', label: 'Reportes', icon: FileText },
+    { id: 'admin_billing', label: 'Mi Suscripción', icon: CreditCard },
+    { id: 'notifications', label: 'Notificaciones', icon: Bell, badge: 'unread' },
     { id: 'app_guide', label: 'Guía de Uso', icon: BookOpen },
   ],
   resident: [
@@ -58,7 +66,8 @@ const NAV_ITEMS = {
     { id: 'resident_visitors', label: 'Visitantes', icon: Phone },
     { id: 'resident_reservations', label: 'Reservas', icon: Calendar },
     { id: 'resident_incidents', label: 'Incidentes', icon: AlertTriangle },
-    { id: 'app_guide', label: 'Guía de Uso', icon: BookOpen },
+    { id: 'notifications', label: 'Notificaciones', icon: Bell, badge: 'unread' },
+    { id: 'app_guide', label: 'Guía', icon: BookOpen },
   ],
   guard: [
     { id: 'guard_dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -72,6 +81,7 @@ const MOBILE_ITEMS = {
     { id: 'super_complexes', label: 'Conjuntos', icon: Building2 },
     { id: 'super_users', label: 'Usuarios', icon: Users },
     { id: 'super_subscriptions', label: 'Planes', icon: FileText },
+    { id: 'notifications', label: 'Notificaciones', icon: Bell, badge: 'unread' },
     { id: 'app_guide', label: 'Guía', icon: BookOpen },
   ],
   admin: [
@@ -79,6 +89,7 @@ const MOBILE_ITEMS = {
     { id: 'admin_pending', label: 'Pendientes', icon: UserCheck },
     { id: 'admin_announcements', label: 'Avisos', icon: Megaphone },
     { id: 'admin_residents', label: 'Residentes', icon: Users },
+    { id: 'notifications', label: 'Notificaciones', icon: Bell, badge: 'unread' },
     { id: 'app_guide', label: 'Guía', icon: BookOpen },
   ],
   resident: [
@@ -90,24 +101,31 @@ const MOBILE_ITEMS = {
   ],
   guard: [
     { id: 'guard_dashboard', label: 'Home', icon: LayoutDashboard },
+    { id: 'notifications', label: 'Notificaciones', icon: Bell, badge: 'unread' },
     { id: 'app_guide', label: 'Guía', icon: BookOpen },
   ],
 };
 
-function getBadgeCount(item, users) {
+function getBadgeCount(item, users, notifications) {
   if (item.badge === 'pending') {
     return users.filter((u) => u.status === 'pending').length;
+  }
+  if (item.badge === 'unread') {
+    return notifications.filter((n) => !n.read).length;
   }
   return 0;
 }
 
 export default function AppLayout({ children, currentView, onNavigate, onLogout }) {
   const { currentUser, currentComplex } = useAuth();
-  const { users, notifications, markAllNotificationsAsRead, clearNotifications } = useData();
+  const { users, notifications } = useData();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pushStatus, setPushStatus] = useState('checking');
   const [pushLoading, setPushLoading] = useState(false);
   const [pushTesting, setPushTesting] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [legalOpen, setLegalOpen] = useState(null);
+  const online = useOnlineStatus();
 
   const refreshPushStatus = async (authId) => {
     if (!authId) { setPushStatus('checking'); return; }
@@ -148,8 +166,17 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
   const handleTestPush = async () => {
     if (!currentUser?.id) return;
     setPushTesting(true);
-    await sendPushToUser(currentUser.id, 'Prueba de notificación', 'Si ves esto, las push funcionan en este dispositivo.');
+    const ok = await sendPushToUser(currentUser.id, 'Prueba de notificación', 'Si ves esto, las push funcionan en este dispositivo.');
+    console.log('[PushTest] resultado:', ok);
+    if (!ok) alert('No se pudo enviar la prueba. Revisa: 1) que el token esté guardado (debug), 2) que estés usando Chrome/Android con permiso Permitir, 3) logs Vercel /api/send-push');
     setPushTesting(false);
+  };
+
+  const handleDebugPush = async () => {
+    if (!currentUser?.auth_user_id) return;
+    const info = await getPushDebugInfo(currentUser.auth_user_id).catch(() => ({}));
+    console.log('[PushDebug]', info);
+    alert(`Debug push:\npermiso: ${info.permission}\nsoportado: ${info.isSupported}\nSW activo: ${info.swActive}\nSW: ${info.swScript || '-'}\nVAPID: ${info.vapidConfigured ? 'sí' : 'NO'}\ntoken local: ${info.localToken ? info.localToken.slice(0,16)+'...' : 'ninguno'}\nTokens servidor: ${info.serverTokensCount}\n\nCopia este texto y envíamelo. Si dice VAPID:NO, falta config Vercel. Si SW activo:false, reinstala PWA.`);
   };
 
   const role = currentUser?.role || 'resident';
@@ -159,15 +186,15 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
   const planTheme = {
     free: {
       pageBg: 'linear-gradient(135deg, #f0fdf4 0%, #ffffff 40%, #ecfdf5 100%)',
-      panelBg: 'rgba(255,255,255,0.85)',
-      panelBorder: 'rgba(16,185,129,0.20)',
-      accent: '#10b981',
-      accentSoft: 'rgba(16,185,129,0.12)',
-      hover: 'rgba(16,185,129,0.08)',
+      panelBg: 'rgba(255,255,255,0.92)',
+      panelBorder: 'rgba(16,185,129,0.25)',
+      accent: '#059669',
+      accentSoft: 'rgba(16,185,129,0.15)',
+      hover: 'rgba(16,185,129,0.10)',
       text: '#0f172a',
-      muted: '#475569',
-      topBar: 'rgba(255,255,255,0.78)',
-      mobileBg: 'rgba(255,255,255,0.9)',
+      muted: '#334155',
+      topBar: 'rgba(255,255,255,0.92)',
+      mobileBg: 'rgba(255,255,255,0.96)',
     },
     pro: {
       pageBg: 'radial-gradient(circle at top, #082f49 0%, #111827 36%, #020817 100%)',
@@ -211,7 +238,7 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
             <Building2 className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-sm font-bold" style={{ color: activeTheme.text }}>Conjuntos App</h1>
+            <h1 className="text-sm font-bold" style={{ color: activeTheme.text }}>Residex</h1>
             <p className="text-[11px] truncate max-w-[140px]" style={{ color: activeTheme.muted }}>
               {currentComplex?.name || 'Panel Admin'}
             </p>
@@ -223,7 +250,7 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentView === item.id;
-          const badgeCount = getBadgeCount(item, users);
+           const badgeCount = getBadgeCount(item, users, notifications);
 
           return (
             <button
@@ -275,8 +302,7 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
           <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 space-y-1">
             <p className="font-semibold">Notificaciones bloqueadas</p>
             <p>
-              Ve a <span className="font-bold">Ajustes de Android → Aplicaciones → Conjuntos App → Notificaciones</span> y actívalas.
-              Luego cierra y vuelve a abrir la app.
+              En <span className="font-bold">Chrome → candado en la barra → Permisos → Notificaciones → Permitir</span> y en <span className="font-bold">Ajustes Android → Apps → Chrome → Notificaciones → Permitir</span> + <span className="font-bold">Batería → Sin restricciones</span>. Luego recarga la PWA.
             </p>
           </div>
         )}
@@ -290,6 +316,14 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
             <span>{pushTesting ? 'Enviando prueba...' : 'Notificaciones activas · Probar'}</span>
           </button>
         )}
+        <button onClick={handleDebugPush} className="w-full text-[11px] text-slate-500 hover:text-slate-700 underline py-1 cursor-pointer">Debug push</button>
+        <button
+          onClick={() => setSupportOpen(true)}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 transition-all cursor-pointer shadow-sm"
+        >
+          <LifeBuoy className="w-4 h-4" />
+          <span>Soporte</span>
+        </button>
         <button
           onClick={onLogout}
           className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 hover:text-rose-800 transition-all cursor-pointer shadow-sm"
@@ -297,6 +331,15 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
           <LogOut className="w-4 h-4" />
           <span>Cerrar sesión</span>
         </button>
+        <p className="text-center text-[10px] text-slate-500 pt-1">
+          <button type="button" onClick={() => setLegalOpen('privacy')} className="hover:text-emerald-400 underline cursor-pointer">
+            Privacidad
+          </button>
+          <span className="mx-1">·</span>
+          <button type="button" onClick={() => setLegalOpen('terms')} className="hover:text-emerald-400 underline cursor-pointer">
+            Términos
+          </button>
+        </p>
       </div>
     </div>
   );
@@ -323,11 +366,12 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
             onClick={() => setMobileOpen(false)}
           />
           <aside
-            className="fixed inset-y-0 left-0 w-72 border-r z-50 shadow-2xl"
+            className="fixed inset-y-0 left-0 w-[280px] sm:w-72 border-r z-50 shadow-2xl flex flex-col"
             style={{
               background: activeTheme.panelBg,
               borderColor: activeTheme.panelBorder,
               boxShadow: `0 20px 40px ${activeTheme.accentSoft}`,
+              maxHeight: '100vh',
             }}
           >
             <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: activeTheme.panelBorder }}>
@@ -340,7 +384,9 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
                 <X className="w-5 h-5" />
               </button>
             </div>
-            {sidebarContent}
+            <div className="flex-1 overflow-y-auto">
+              {sidebarContent}
+            </div>
           </aside>
         </div>
       )}
@@ -361,11 +407,6 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
                 {currentComplex.code}
               </span>
             )}
-            <NotificationBell
-              notifications={notifications}
-              onMarkAllRead={markAllNotificationsAsRead}
-              onClearAll={clearNotifications}
-            />
             <button
               onClick={onLogout}
               className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs sm:text-sm font-semibold text-rose-700 hover:bg-rose-100 hover:text-rose-800 transition-colors cursor-pointer shadow-sm"
@@ -388,23 +429,18 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
       >
         <button
           onClick={() => setMobileOpen(true)}
-          className="p-2 rounded-xl cursor-pointer"
+          className="p-2.5 rounded-xl cursor-pointer min-w-[44px] min-h-[44px]"
           style={{ color: activeTheme.accent, background: activeTheme.hover }}
         >
           <Menu className="w-5 h-5" />
         </button>
         <div className="hidden min-[420px]:flex items-center gap-2">
           <Building2 className="w-4 h-4" style={{ color: activeTheme.accent }} />
-          <span className="text-xs font-bold" style={{ color: activeTheme.text }}>Conjuntos App</span>
+          <span className="text-xs font-bold" style={{ color: activeTheme.text }}>Residex</span>
         </div>
-        <NotificationBell
-          notifications={notifications}
-          onMarkAllRead={markAllNotificationsAsRead}
-          onClearAll={clearNotifications}
-        />
         <button
           onClick={onLogout}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 min-h-[44px] text-[10px] sm:text-[11px] font-semibold text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer"
           title="Cerrar sesión"
         >
           <LogOut className="w-3.5 h-3.5" />
@@ -413,8 +449,19 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
       </div>
 
       {/* Main content */}
-      <main className="lg:pl-64 pt-14 pb-20 lg:pt-20 lg:pb-0 min-h-screen">
-        <div className="p-4 sm:p-6 lg:p-8">
+      <main className="lg:pl-64 pt-14 pb-[calc(5rem+env(safe-area-inset-bottom,_0px))] lg:pt-20 lg:pb-0 min-h-screen">
+        <div className="p-4 sm:p-6 lg:p-8 pb-4 sm:pb-6 lg:pb-8 lg:pb-0">
+          {!online && (
+            <div className="mb-4 flex items-center gap-3 p-3 sm:p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center shrink-0">
+                <WifiOff className="w-5 h-5 text-amber-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-amber-200">Sin conexión a internet</p>
+                <p className="text-xs text-amber-200/70">Verás los últimos datos guardados. Se sincronizará al reconectar.</p>
+              </div>
+            </div>
+          )}
           {pushStatus === 'needs-enable' && (
             <div className="mb-4 flex items-center gap-3 p-3 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 shadow-sm">
               <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
@@ -441,8 +488,7 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-amber-900">Notificaciones bloqueadas</p>
                 <p className="text-xs text-amber-700">
-                  Abre <b>Ajustes de Android → Aplicaciones → Conjuntos App → Notificaciones</b> y <b>Permitir notificaciones</b>.
-                  Luego cierra y vuelve a abrir la app.
+                  En <b>Chrome → candado → Permisos → Notificaciones → Permitir</b> y en <b>Ajustes → Apps → Chrome → Notificaciones → Permitir</b> + <b>Batería → Sin restricciones</b>. Luego recarga la PWA.
                 </p>
               </div>
             </div>
@@ -491,8 +537,8 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
           return (
             <button
               key={item.id}
-              onClick={() => onNavigate(item.id)}
-              className="flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-colors min-w-[60px] cursor-pointer"
+               onClick={() => onNavigate(item.id)}
+               className="flex flex-col items-center gap-1 px-2 sm:px-3 py-2.5 rounded-xl transition-colors min-w-[60px] min-h-[52px] cursor-pointer"
               style={
                 isActive
                   ? {
@@ -505,11 +551,17 @@ export default function AppLayout({ children, currentView, onNavigate, onLogout 
               }
             >
               <Icon className="w-5 h-5" />
-              <span className="text-[10px] font-medium">{item.label}</span>
+              <span className="text-[10px] sm:text-xs font-medium">{item.label}</span>
             </button>
           );
         })}
       </nav>
+
+      {/* Modal de soporte */}
+      <SupportModal isOpen={supportOpen} onClose={() => setSupportOpen(false)} />
+
+      {/* Modal legal */}
+      <LegalModal type={legalOpen} onClose={() => setLegalOpen(null)} />
     </div>
   );
 }

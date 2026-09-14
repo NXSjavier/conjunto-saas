@@ -19,6 +19,7 @@ export const PLAN_LIMITS = {
   free: {
     name: 'Plan Gratuito',
     price: '$0 / 30 días',
+    price_usd: 0,
     max_apartments: 50,
     max_guards: 2,
     max_areas: 1,
@@ -33,6 +34,7 @@ export const PLAN_LIMITS = {
   pro: {
     name: 'Plan Pro',
     price: '$30 / mes',
+    price_usd: 30,
     max_apartments: 200,
     max_guards: 5,
     max_areas: 5,
@@ -47,6 +49,7 @@ export const PLAN_LIMITS = {
   enterprise: {
     name: 'Plan Enterprise',
     price: '$100 / mes',
+    price_usd: 100,
     max_apartments: 9999,
     max_guards: 999,
     max_areas: 999,

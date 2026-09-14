@@ -227,8 +227,8 @@ export const PLAN_LIMITS: Record<PlanType, PlanConfig> = {
   },
   pro: {
     name: 'Pro',
-    price: 24,
-    priceText: '$24 / mes (~$96k COP)',
+    price: 30,
+    priceText: '$30 / mes (~$120k COP)',
     maxApartments: 200,
     maxGuards: 5,
     maxAreas: 5,
@@ -236,8 +236,8 @@ export const PLAN_LIMITS: Record<PlanType, PlanConfig> = {
   },
   enterprise: {
     name: 'Enterprise',
-    price: 49,
-    priceText: '$49 / mes (~$196k COP)',
+    price: 100,
+    priceText: '$100 / mes (~$400k COP)',
     maxApartments: -1,
     maxGuards: -1,
     maxAreas: -1,

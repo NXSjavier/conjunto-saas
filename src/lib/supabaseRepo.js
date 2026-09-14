@@ -14,7 +14,7 @@ export async function loginDirect(email, password) {
 
   const { data: user, error } = await supabase
     .from('profiles')
-    .select('id, name, email, role, complex_id, apartment, phone, status, face_photo, fcm_token, created_at')
+    .select('id, auth_user_id, name, email, role, complex_id, apartment, phone, status, face_photo, fcm_token, created_at')
     .eq('auth_user_id', authData.user.id)
     .single();
   if (error || !user) throw new Error('Perfil de usuario no encontrado');
@@ -50,10 +50,20 @@ export async function registerWithCodeDirect({ name, email, password, complexCod
     id: userId, auth_user_id: authData.user.id, name, email: email.trim().toLowerCase(),
     role: 'resident', complex_id: complex.id,
     apartment: apartment || 'Pendiente', phone: phone || '', status: 'active',
+    consentido: true, consentido_at: new Date().toISOString(),
     created_at: new Date().toISOString(),
   };
   const { error } = await supabase.from('profiles').insert(payload);
-  if (error) throw new Error(error.message);
+  if (error) {
+    // Fallback: si la columna consentido aún no existe (migración pendiente), reintentar sin ella
+    if (error.message?.includes('consentido')) {
+      const { consentido, consentido_at, ...fallback } = payload;
+      const { error: retryErr } = await supabase.from('profiles').insert(fallback);
+      if (retryErr) throw new Error(retryErr.message);
+    } else {
+      throw new Error(error.message);
+    }
+  }
 
   await supabase.from('notifications').insert({
     id: genId('notif'), user_id: 'u-super',
@@ -84,10 +94,20 @@ export async function registerWithoutCodeDirect({ name, email, password, complex
     id: userId, auth_user_id: authData.user.id, name, email: email.trim().toLowerCase(),
     role: 'resident', complex_id: complex.id,
     apartment: apartment || 'Por asignar', phone: phone || '', status: 'pending',
-    face_photo: photoUrl, created_at: new Date().toISOString(),
+    face_photo: photoUrl, consentido: true, consentido_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
   };
   const { error } = await supabase.from('profiles').insert(payload);
-  if (error) throw new Error(error.message);
+  if (error) {
+    // Fallback: si la columna consentido aún no existe (migración pendiente), reintentar sin ella
+    if (error.message?.includes('consentido')) {
+      const { consentido, consentido_at, ...fallback } = payload;
+      const { error: retryErr } = await supabase.from('profiles').insert(fallback);
+      if (retryErr) throw new Error(retryErr.message);
+    } else {
+      throw new Error(error.message);
+    }
+  }
 
   const { data: adminUsers } = await supabase.from('profiles').select('id, role, complex_id').in('role', ['admin', 'super_admin']);
   const recipients = (adminUsers || []).filter((u) => u.role === 'super_admin' || u.complex_id === complex.id);

@@ -36,15 +36,16 @@ export const AuditsView = () => {
         />
       ) : (
         <Card>
-          <div className="overflow-x-auto -mx-5">
+          {/* Desktop: tabla */}
+          <div className="hidden lg:block overflow-x-auto">
             <table className="w-full min-w-[560px] text-xs">
               <thead>
                 <tr className="border-b border-slate-800/80">
                   <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider">Usuario</th>
                   <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider">Acción</th>
-                  <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider hidden sm:table-cell">Entidad</th>
+                  <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider">Entidad</th>
                   <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider">Fecha</th>
-                  <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider hidden md:table-cell">Detalles</th>
+                  <th className="text-left py-3 px-5 font-semibold text-slate-400 uppercase tracking-wider">Detalles</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -63,14 +64,14 @@ export const AuditsView = () => {
                         {formatAction(audit.action)}
                       </Badge>
                     </td>
-                    <td className="py-3 px-5 text-slate-400 hidden sm:table-cell">
+                    <td className="py-3 px-5 text-slate-400">
                       <div className="flex items-center gap-1.5">
                         <FileText className="w-3 h-3 text-slate-500" />
                         {audit.entity || '-'}
                       </div>
                     </td>
                     <td className="py-3 px-5 text-slate-500">{formatDate(audit.created_at)}</td>
-                    <td className="py-3 px-5 text-slate-400 hidden md:table-cell">
+                    <td className="py-3 px-5 text-slate-400">
                       {audit.details && (
                         <span className="line-clamp-1">{audit.details}</span>
                       )}
@@ -79,6 +80,35 @@ export const AuditsView = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile: cards */}
+          <div className="lg:hidden space-y-2">
+            {audits.map((audit) => (
+              <div key={audit.id} className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <User className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <span className="text-slate-200 font-medium text-sm truncate">
+                      {audit.user_name || getUserName(audit.user_id)}
+                    </span>
+                  </div>
+                  <Badge variant="indigo" size="sm">
+                    {formatAction(audit.action)}
+                  </Badge>
+                </div>
+                {audit.entity && (
+                  <div className="flex items-center gap-1.5">
+                    <FileText className="w-3 h-3 text-slate-500" />
+                    <span className="text-xs text-slate-400">{audit.entity}</span>
+                  </div>
+                )}
+                {audit.details && (
+                  <p className="text-xs text-slate-400 line-clamp-2">{audit.details}</p>
+                )}
+                <p className="text-[10px] text-slate-500">{formatDate(audit.created_at)}</p>
+              </div>
+            ))}
           </div>
         </Card>
       )}

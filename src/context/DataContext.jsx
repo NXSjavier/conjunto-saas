@@ -8,6 +8,8 @@ import { getApiBaseUrl, isStandalone } from '../lib/config';
 import { supabase } from '../lib/supabaseClient';
 import { fetchBootstrapDirect, fetchBootstrapHeavy, fetchComplexesDirect } from '../lib/supabaseRepo';
 import { sendPushToUser, sendPushToMany } from '../lib/pushNotifications';
+import { setLauncherBadge } from '../lib/badge';
+import { saveCachedAnnouncements } from '../lib/offlineCache';
 
 const DataContext = createContext(undefined);
 const apiBase = getApiBaseUrl();
@@ -15,7 +17,21 @@ const apiFetch = (path, options = {}) => fetch(`${apiBase}${path}`, options);
 const genId = (p) => `${p}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 const playNotificationBeep = (title, body) => {
   playNotificationSound();
-  notifyWhenHidden(title || 'Conjuntos App', body || 'Tienes una actualización nueva.');
+  notifyWhenHidden(title || 'Residex', body || 'Tienes una actualización nueva.');
+};
+
+/** Insertar notificación en BD (silencioso, no bloquea UI) */
+const insertNotification = (userId, title, message, type) => {
+  if (!userId || !title) return;
+  supabase.from('notifications').insert({
+    id: genId('notif'),
+    user_id: userId,
+    title,
+    message: message || '',
+    type: type || 'default',
+    read: 0,
+    created_at: new Date().toISOString(),
+  }).then(() => {}, () => {});
 };
 
 export const DataProvider = ({ children }) => {
@@ -34,8 +50,125 @@ export const DataProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [isWsConnected, setIsWsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  const [dailyUsage, setDailyUsage] = useState([]);
 
   const standalone = isStandalone() || !apiBase;
+
+  // Fecha local YYYY-MM-DD (para usage_log.day)
+  const localDay = () => {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${m}-${dd}`;
+  };
+
+  // ✅ Registra 1 sesión del día en usage_log (idempotente por usuario/día)
+  const logDailyUsage = useCallback(async (user) => {
+    if (!user?.id) return;
+    try {
+      const flag = `usage_logged_${user.id}_${localDay()}`;
+      if (sessionStorage.getItem(flag)) return;
+      const { data: existing, error: selErr } = await supabase
+        .from('usage_log')
+        .select('id, sessions')
+        .eq('auth_user_id', user.auth_user_id || user.id)
+        .eq('day', localDay())
+        .maybeSingle();
+      if (selErr) throw selErr;
+      if (existing?.id) {
+        await supabase.from('usage_log').update({
+          last_seen: new Date().toISOString(),
+          sessions: (existing.sessions || 1) + 1,
+          complex_id: user.complex_id || null,
+          role: user.role || 'resident',
+        }).eq('id', existing.id);
+      } else {
+        await supabase.from('usage_log').insert({
+          auth_user_id: user.auth_user_id || user.id,
+          profile_id: user.id,
+          complex_id: user.complex_id || null,
+          role: user.role || 'resident',
+          day: localDay(),
+          first_seen: new Date().toISOString(),
+          last_seen: new Date().toISOString(),
+          sessions: 1,
+        });
+      }
+      try { sessionStorage.setItem(flag, '1'); } catch {}
+    } catch (err) {
+      console.warn('[UsoDiario] No se pudo registrar sesión:', err?.message || err);
+    }
+  }, []);
+
+  // ✅ Carga uso de los últimos 7 días (solo super_admin)
+  const fetchDailyUsage = useCallback(async (role) => {
+    if (role !== 'super_admin') return;
+    try {
+      const d = new Date();
+      d.setDate(d.getDate() - 6);
+      const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const { data, error } = await supabase
+        .from('usage_log')
+        .select('*')
+        .gte('day', from)
+        .order('day', { ascending: true })
+        .limit(2000);
+      if (!error) setDailyUsage(data || []);
+    } catch (err) {
+      console.warn('[UsoDiario] Error cargando uso:', err?.message || err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentUser?.role === 'super_admin') fetchDailyUsage('super_admin');
+    else setDailyUsage([]);
+  }, [currentUser?.id, currentUser?.role, fetchDailyUsage]);
+
+  // ✅ Badge del launcher = cantidad de notificaciones no leídas
+  useEffect(() => {
+    const unread = notifications.filter((n) => !n.read).length;
+    setLauncherBadge(unread);
+  }, [notifications]);
+
+  // ✅ Cache offline: guarda últimos comunicados para lectura sin conexión
+  useEffect(() => {
+    if (announcements.length > 0) {
+      saveCachedAnnouncements(currentUser?.complex_id, announcements);
+    }
+  }, [announcements, currentUser?.complex_id]);
+
+  // ✅ FUNCIÓN PARA OBTENER ADMINS DE UN COMPLEJO (robusta)
+  const getAdminIdsForComplex = useCallback(async (complexId) => {
+    try {
+      // Primero intentar desde el estado
+      let adminIds = users
+        .filter((u) => u.role === 'admin' && u.complex_id === complexId && u.status === 'active')
+        .map((u) => u.id);
+      
+      // Si no hay admins en el estado, consultar Supabase directamente
+      if (adminIds.length === 0) {
+        console.log('📡 Buscando admins en Supabase para complejo:', complexId);
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('role', 'admin')
+          .eq('complex_id', complexId)
+          .eq('status', 'active');
+        
+        if (!error && data) {
+          adminIds = data.map((u) => u.id);
+          console.log('✅ Admins encontrados en Supabase:', adminIds.length);
+        }
+      }
+      
+      console.log('👥 Admins para notificación:', adminIds);
+      return adminIds;
+    } catch (error) {
+      console.error('❌ Error obteniendo admins:', error);
+      return [];
+    }
+  }, [users]);
 
   const refreshData = useCallback(async () => {
     try {
@@ -118,8 +251,6 @@ export const DataProvider = ({ children }) => {
   useEffect(() => { refreshData(); }, [refreshData]);
 
   // Realtime: Supabase Realtime como fuente ÚNICA para web y móvil
-  // No hay WebSocket Express — solo Supabase Realtime vía PostgreSQL WAL
-  // Funciona SIEMPRE sin importar si el CRUD va por Express o por Supabase directo
   useEffect(() => {
     let channel;
     let retries = 0;
@@ -127,77 +258,164 @@ export const DataProvider = ({ children }) => {
 
     const connect = () => {
       channel = supabase.channel('conjuntos-v3')
+        // ============================================
+        // ✅ VISITORS - MEJORADO CON PUSH
+        // ============================================
         .on('postgres_changes', { event: '*', schema: 'public', table: 'visitors' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             setVisitors((p) => [payload.new, ...p.filter((v) => v.id !== payload.new.id)]);
             playNotificationBeep('Nuevo Pase de Visita', `${payload.new.visitor_name} — Apt ${payload.new.destination_apartment || '?'}`);
-            sendPushToMany(
-              (users || []).filter((u) => u.role === 'admin' && u.complex_id === payload.new.complex_id).map((u) => u.id),
-              'Nuevo Pase de Visita',
-              `${payload.new.visitor_name} — Apt ${payload.new.destination_apartment || '?'}`,
-              '/'
-            ).catch(() => {});
+            
+            (async () => {
+              try {
+                const adminIds = await getAdminIdsForComplex(payload.new.complex_id);
+                if (adminIds.length > 0) {
+                  adminIds.forEach((uid) => insertNotification(uid, '🚪 Nuevo Pase de Visita', `${payload.new.visitor_name} — Apt ${payload.new.destination_apartment || '?'}`, 'visitor'));
+                  await sendPushToMany(
+                    adminIds,
+                    '🚪 Nuevo Pase de Visita',
+                    `${payload.new.visitor_name} — Apt ${payload.new.destination_apartment || '?'}`,
+                    `/visitors/${payload.new.id}`
+                  );
+                }
+              } catch (error) {
+                console.error('❌ [Visitors] Error enviando notificación:', error);
+              }
+            })();
           }
           if (payload.eventType === 'UPDATE') {
             setVisitors((p) => p.map((v) => v.id === payload.new.id ? payload.new : v));
             playNotificationBeep('Visita Actualizada', `${payload.new.visitor_name} — ${payload.new.status?.toUpperCase() || ''}`);
+            
             if (payload.new.resident_id && (payload.new.status === 'in' || payload.new.status === 'out')) {
-              sendPushToUser(
-                payload.new.resident_id,
-                payload.new.status === 'in' ? 'Visitante Ingresó' : 'Visitante Salió',
-                `${payload.new.visitor_name} (${payload.new.code}) → ${payload.new.status.toUpperCase()}`,
-                '/'
-              ).catch(() => {});
+              const title = payload.new.status === 'in' ? '✅ Visitante Ingresó' : '🚪 Visitante Salió';
+              const message = `${payload.new.visitor_name} (${payload.new.code}) → ${payload.new.status.toUpperCase()}`;
+              insertNotification(payload.new.resident_id, title, message, 'visitor');
+              (async () => {
+                try {
+                  await sendPushToUser(payload.new.resident_id, title, message, `/visitors/${payload.new.id}`);
+                } catch (error) {
+                  console.error('❌ [Visitors] Error enviando push al residente:', error);
+                }
+              })();
             }
           }
           if (payload.eventType === 'DELETE') setVisitors((p) => p.filter((v) => v.id !== payload.old.id));
         })
+
+        // ============================================
+        // ✅ ANNOUNCEMENTS
+        // ============================================
         .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             setAnnouncements((p) => [payload.new, ...p.filter((a) => a.id !== payload.new.id)]);
             playNotificationBeep('Nuevo Comunicado', payload.new.title);
-            sendPushToMany(
-              (users || []).filter((u) => u.complex_id === payload.new.complex_id && u.id !== currentUser?.id).map((u) => u.id),
-              'Nuevo Comunicado',
-              payload.new.title,
-              '/'
-            ).catch(() => {});
+            (async () => {
+              try {
+                const recipients = users
+                  .filter((u) => u.complex_id === payload.new.complex_id && u.id !== currentUser?.id && u.status === 'active')
+                  .map((u) => u.id);
+                if (recipients.length > 0) {
+                  recipients.forEach((uid) => insertNotification(uid, '📢 Nuevo Comunicado', payload.new.title, 'announcement'));
+                  await sendPushToMany(
+                    recipients,
+                    '📢 Nuevo Comunicado',
+                    payload.new.title,
+                    `/announcements/${payload.new.id}`
+                  );
+                }
+              } catch (error) {
+                console.error('Error enviando notificación de comunicado:', error);
+              }
+            })();
           }
           if (payload.eventType === 'UPDATE') setAnnouncements((p) => p.map((a) => a.id === payload.new.id ? payload.new : a));
           if (payload.eventType === 'DELETE') setAnnouncements((p) => p.filter((a) => a.id !== payload.old.id));
         })
+
+        // ============================================
+        // ✅ COMMENTS
+        // ============================================
         .on('postgres_changes', { event: '*', schema: 'public', table: 'announcement_comments' }, (payload) => {
-          if (payload.eventType === 'INSERT') { setComments((p) => [...p.filter((c) => c.id !== payload.new.id), payload.new]); playNotificationBeep('Nuevo Comentario', payload.new.text?.substring(0, 50) || 'Nuevo comentario'); }
+          if (payload.eventType === 'INSERT') { 
+            setComments((p) => [...p.filter((c) => c.id !== payload.new.id), payload.new]); 
+            playNotificationBeep('Nuevo Comentario', payload.new.text?.substring(0, 50) || 'Nuevo comentario');
+            // Notificar al autor del comunicado si es de otro usuario
+            if (payload.new.author_id && payload.new.announcement_id) {
+              (async () => {
+                try {
+                  const { data: announcement } = await supabase.from('announcements').select('author_id').eq('id', payload.new.announcement_id).single();
+                  if (announcement?.author_id && announcement.author_id !== payload.new.author_id) {
+                    insertNotification(announcement.author_id, '💬 Nuevo Comentario', payload.new.text?.substring(0, 80) || 'Nuevo comentario', 'comment');
+                  }
+                } catch {}
+              })();
+            }
+          }
           if (payload.eventType === 'DELETE') setComments((p) => p.filter((c) => c.id !== payload.old.id));
         })
+
+        // ============================================
+        // ✅ INCIDENTS - MEJORADO CON PUSH
+        // ============================================
         .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             setIncidents((p) => [payload.new, ...p.filter((i) => i.id !== payload.new.id)]);
             playNotificationBeep('Nueva Incidencia', `${payload.new.title} — ${payload.new.priority || 'Normal'}`);
-            sendPushToMany(
-              (users || []).filter((u) => u.role === 'admin' && u.complex_id === payload.new.complex_id).map((u) => u.id),
-              'Nueva Incidencia Reportada',
-              `${payload.new.title} — ${payload.new.priority || 'Normal'}`,
-              '/'
-            ).catch(() => {});
+            
+            (async () => {
+              try {
+                const adminIds = await getAdminIdsForComplex(payload.new.complex_id);
+                if (adminIds.length > 0) {
+                  adminIds.forEach((uid) => insertNotification(uid, '🚨 Nueva Incidencia Reportada', `${payload.new.title} — ${payload.new.priority || 'Normal'}`, 'incident'));
+                  await sendPushToMany(
+                    adminIds,
+                    '🚨 Nueva Incidencia Reportada',
+                    `${payload.new.title} — ${payload.new.priority || 'Normal'}`,
+                    `/incidents/${payload.new.id}`
+                  );
+                }
+              } catch (error) {
+                console.error('❌ [Incidents] Error enviando notificación:', error);
+              }
+            })();
           }
           if (payload.eventType === 'UPDATE') setIncidents((p) => p.map((i) => i.id === payload.new.id ? payload.new : i));
           if (payload.eventType === 'DELETE') setIncidents((p) => p.filter((i) => i.id !== payload.old.id));
         })
+
+        // ============================================
+        // ✅ RESERVATIONS - MEJORADO CON PUSH
+        // ============================================
         .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             setReservations((p) => [payload.new, ...p.filter((r) => r.id !== payload.new.id)]);
             playNotificationBeep('Nueva Reserva', `${payload.new.area_name} — ${payload.new.reservation_date || ''}`);
-            sendPushToMany(
-              (users || []).filter((u) => u.role === 'admin' && u.complex_id === payload.new.complex_id).map((u) => u.id),
-              'Nueva Solicitud de Reserva',
-              `${payload.new.area_name} — ${payload.new.reservation_date || ''}`,
-              '/'
-            ).catch(() => {});
+            
+            (async () => {
+              try {
+                const adminIds = await getAdminIdsForComplex(payload.new.complex_id);
+                if (adminIds.length > 0) {
+                  adminIds.forEach((uid) => insertNotification(uid, '📅 Nueva Solicitud de Reserva', `${payload.new.area_name} — ${payload.new.reservation_date || ''}`, 'reservation'));
+                  await sendPushToMany(
+                    adminIds,
+                    '📅 Nueva Solicitud de Reserva',
+                    `${payload.new.area_name} — ${payload.new.reservation_date || ''}`,
+                    `/reservations/${payload.new.id}`
+                  );
+                }
+              } catch (error) {
+                console.error('❌ [Reservations] Error enviando notificación:', error);
+              }
+            })();
           }
           if (payload.eventType === 'UPDATE') setReservations((p) => p.map((r) => r.id === payload.new.id ? payload.new : r));
           if (payload.eventType === 'DELETE') setReservations((p) => p.filter((r) => r.id !== payload.old.id));
         })
+
+        // ============================================
+        // ✅ PROFILES
+        // ============================================
         .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             setUsers((p) => [payload.new, ...p.filter((u) => u.id !== payload.new.id)]);
@@ -211,16 +429,28 @@ export const DataProvider = ({ children }) => {
           }
           if (payload.eventType === 'DELETE') { setUsers((p) => p.filter((u) => u.id !== payload.old.id)); setGuards((p) => p.filter((g) => g.id !== payload.old.id)); }
         })
+
+        // ============================================
+        // ✅ RESIDENTIAL_COMPLEXES
+        // ============================================
         .on('postgres_changes', { event: '*', schema: 'public', table: 'residential_complexes' }, (payload) => {
           if (payload.eventType === 'INSERT') setComplexes((p) => [payload.new, ...p.filter((c) => c.id !== payload.new.id)]);
           if (payload.eventType === 'UPDATE') setComplexes((p) => p.map((c) => c.id === payload.new.id ? payload.new : c));
           if (payload.eventType === 'DELETE') setComplexes((p) => p.filter((c) => c.id !== payload.old.id));
         })
+
+        // ============================================
+        // ✅ APARTMENTS
+        // ============================================
         .on('postgres_changes', { event: '*', schema: 'public', table: 'apartments' }, (payload) => {
           if (payload.eventType === 'INSERT') setApartments((p) => [...p.filter((a) => a.id !== payload.new.id), payload.new]);
           if (payload.eventType === 'UPDATE') setApartments((p) => p.map((a) => a.id === payload.new.id ? payload.new : a));
           if (payload.eventType === 'DELETE') setApartments((p) => p.filter((a) => a.id !== payload.old.id));
         })
+
+        // ============================================
+        // ✅ NOTIFICATIONS
+        // ============================================
         .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             if (!currentUser || payload.new.user_id === currentUser.id) {
@@ -231,9 +461,27 @@ export const DataProvider = ({ children }) => {
           if (payload.eventType === 'UPDATE') setNotifications((p) => p.map((n) => n.id === payload.new.id ? payload.new : n));
           if (payload.eventType === 'DELETE') setNotifications((p) => p.filter((n) => n.id !== payload.old.id));
         })
+
+        // ============================================
+        // ✅ AUDIT_LOGS
+        // ============================================
         .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, (payload) => {
           if (payload.eventType === 'INSERT') setAudits((p) => [payload.new, ...p.slice(0, 99)]);
         })
+
+        // ============================================
+        // ✅ USAGE_LOG (uso diario, en vivo para super_admin)
+        // ============================================
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'usage_log' }, (payload) => {
+          if (currentUser?.role !== 'super_admin') return;
+          if (payload.eventType === 'INSERT') {
+            setDailyUsage((p) => [...p.filter((r) => r.id !== payload.new.id), payload.new]);
+          }
+          if (payload.eventType === 'UPDATE') {
+            setDailyUsage((p) => p.map((r) => (r.id === payload.new.id ? payload.new : r)));
+          }
+        })
+
         .subscribe((status, err) => {
           if (status === 'SUBSCRIBED') { setIsWsConnected(true); retries = 0; }
           if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -245,7 +493,77 @@ export const DataProvider = ({ children }) => {
 
     connect();
     return () => { if (channel) supabase.removeChannel(channel); };
-  }, [currentUser]);
+  }, [currentUser, getAdminIdsForComplex]);
+
+  // ============================================
+  // ✅ PRESENCIA EN TIEMPO REAL (conectados/desconectados)
+  // Todos los usuarios se registran en el canal; solo el super_admin
+  // consume el estado para ver quién está en línea.
+  // ============================================
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let presenceChannel;
+    let cancelled = false;
+
+    try {
+      presenceChannel = supabase.channel('presence-online-v1');
+      presenceChannel
+        .on('presence', { event: 'sync' }, () => {
+          if (cancelled || currentUser?.role !== 'super_admin') return;
+          try {
+            const state = presenceChannel.presenceState();
+            const entries = [];
+            Object.values(state).forEach((arr) => {
+              if (Array.isArray(arr)) arr.forEach((e) => entries.push(e));
+            });
+            // Agrupar por usuario y contar dispositivos (pestañas/PWA)
+            const byUser = {};
+            entries.forEach((e) => {
+              if (!e || !e.id) return;
+              if (!byUser[e.id]) {
+                byUser[e.id] = { ...e, devices: 1 };
+              } else {
+                byUser[e.id].devices += 1;
+                // Mantener el ingreso más reciente
+                if (e.online_at && e.online_at > (byUser[e.id].online_at || '')) {
+                  byUser[e.id].online_at = e.online_at;
+                }
+              }
+            });
+            setOnlineUsers(Object.values(byUser));
+          } catch (err) {
+            console.warn('[Presencia] Error en sync:', err);
+          }
+        })
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED' && !cancelled) {
+            await presenceChannel.track({
+              id: currentUser.id,
+              name: currentUser.name || 'Usuario',
+              role: currentUser.role || 'resident',
+              complex_id: currentUser.complex_id || null,
+              online_at: new Date().toISOString(),
+            });
+            console.log('🟢 [Presencia] Usuario registrado en línea:', currentUser.name);
+            // Registrar sesión del día (uso diario por conjunto)
+            logDailyUsage(currentUser).catch(() => {});
+          }
+        });
+    } catch (err) {
+      console.warn('[Presencia] Error inicializando canal:', err);
+    }
+
+    return () => {
+      cancelled = true;
+      try {
+        if (presenceChannel) {
+          presenceChannel.untrack().catch(() => {});
+          supabase.removeChannel(presenceChannel);
+        }
+      } catch {}
+      setOnlineUsers([]);
+    };
+  }, [currentUser?.id, currentUser?.role]);
 
   const checkResourceLimit = (type) => {
     const plan = currentComplex?.plan || 'free';
@@ -266,7 +584,10 @@ export const DataProvider = ({ children }) => {
     return false;
   };
 
-  // --- CRUD con soporte standalone ---
+  // ============================================
+  // CRUD con soporte standalone
+  // ============================================
+
   const createComplex = async (data) => {
     if (standalone) {
       const id = genId('c');
@@ -277,6 +598,7 @@ export const DataProvider = ({ children }) => {
     }
     try { const res = await apiFetch('/api/complexes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); if (res.ok) { const created = await res.json(); playSuccessChime(); return created; } } catch (e) { console.error(e); } return null;
   };
+
   const updateComplex = async (id, data) => {
     if (standalone) {
       const { data: updated, error } = await supabase.from('residential_complexes').update({ name: data.name, code: data.code, address: data.address, plan: data.plan, subscription_status: data.subscription_status, subscription_expiry: data.subscription_expiry, status: data.status }).eq('id', id).select().single();
@@ -285,6 +607,7 @@ export const DataProvider = ({ children }) => {
     }
     try { const res = await apiFetch(`/api/complexes/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); if (res.ok) { const updated = await res.json(); setComplexes((prev) => prev.map((c) => (c.id === id ? updated : c))); if (currentComplex?.id === id) updateComplexSession(updated); playSuccessChime(); } } catch (e) { console.error(e); }
   };
+
   const deleteComplex = async (id) => {
     if (standalone) {
       const { error } = await supabase.from('residential_complexes').delete().eq('id', id);
@@ -293,22 +616,23 @@ export const DataProvider = ({ children }) => {
     }
     try { const res = await apiFetch(`/api/complexes/${id}`, { method: 'DELETE' }); if (res.ok) { setComplexes((prev) => prev.filter((c) => c.id !== id)); playTrashWhoosh(); } } catch (e) { console.error(e); }
   };
+
   const toggleComplexStatus = async (id) => { const target = complexes.find((c) => c.id === id); if (!target) return; const nextStatus = target.status === 'active' ? 'blocked' : 'active'; await updateComplex(id, { ...target, status: nextStatus }); };
+
   const changeComplexPlan = async (id, plan) => { const target = complexes.find((c) => c.id === id); if (!target) return; const nextExpiry = new Date(Date.now()+30*24*60*60*1000).toISOString(); await updateComplex(id, { ...target, plan, subscription_status: 'active', subscription_expiry: nextExpiry }); };
+
   const markComplexPaid = async (complex) => {
     const nextExpiry = new Date(Date.now()+30*24*60*60*1000).toISOString();
     await updateComplex(complex.id, { ...complex, subscription_status: 'active', subscription_expiry: nextExpiry });
     if (currentUser) generateSubscriptionReceiptPDF(complex, currentUser);
     playSuccessChime();
   };
+
   const createAdmin = async (data) => {
-    // Modo Supabase puro: Edge Function segura (service_role nunca en el navegador)
-    // Funciona en Vercel y Android sin backend Express/Fly/Render
     if (standalone) {
       const { data: user, error } = await supabase.functions.invoke('admin-create', { body: data });
       if (error) {
         const msg = error.message || "";
-        // Mensaje más claro cuando la function aún no está desplegada
         if (msg.includes("not found") || msg.includes("Function not found") || msg.includes("404")) {
           alert("Edge Function 'admin-create' no desplegada. Ve a Supabase Dashboard > Edge Functions y desplegala o ejecuta: npx supabase functions deploy admin-create --project-ref kptuyksmdomgqntsdzsu");
           return null;
@@ -316,7 +640,6 @@ export const DataProvider = ({ children }) => {
         alert(`No se pudo crear el administrador: ${msg}`);
         return null;
       }
-      // supabase.functions.invoke envuelve errores de la function en data.error si status != 2xx
       if (user && user.error) { alert(`No se pudo crear: ${user.error}`); return null; }
       if (!user || !user.id) { alert("Respuesta inesperada del servidor al crear admin"); return null; }
       setUsers((p) => [user, ...p]);
@@ -325,6 +648,7 @@ export const DataProvider = ({ children }) => {
     }
     try { const res = await apiFetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...data, role: 'admin', status: 'active' }) }); if (res.ok) { const user = await res.json(); playSuccessChime(); return user; } const err = await res.json().catch(()=>({})); alert(err.error || "No se pudo crear admin (backend)"); } catch (e) { console.error(e); } return null;
   };
+
   const purgeUserAccountCascading = async (userId) => {
     const userToPurge = users.find((u) => u.id === userId);
     if (standalone) {
@@ -343,24 +667,29 @@ export const DataProvider = ({ children }) => {
     }
     try { const res = await apiFetch(`/api/users/${userId}/purge`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operatorId: currentUser?.id, operatorName: currentUser?.name }) }); if (res.ok) { const result = await res.json(); setUsers((prev) => prev.filter((u) => u.id !== userId)); setVisitors((prev) => prev.filter((v) => v.resident_id !== userId)); setReservations((prev) => prev.filter((r) => r.resident_id !== userId)); if (result.audit) setAudits((prev) => [result.audit, ...prev]); if (userToPurge && currentUser) generateUserDeletionCertificatePDF(userToPurge, currentUser); playTrashWhoosh(); } } catch (e) { console.error(e); }
   };
+
   const approveResident = async (userId, apartment) => {
     if (standalone) { const { data: updated } = await supabase.from('profiles').update({ status: 'active', apartment: apartment || 'Pendiente' }).eq('id', userId).select('id, name, email, role, complex_id, apartment, phone, status, face_photo, created_at').single(); if (updated) { setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u))); playSuccessChime(); } return; }
     try { const res = await apiFetch(`/api/users/${userId}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'active', apartment }) }); if (res.ok) { const updated = await res.json(); setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u))); playSuccessChime(); } } catch (e) { console.error(e); }
   };
+
   const rejectResident = async (userId) => {
     if (standalone) { const { data: updated } = await supabase.from('profiles').update({ status: 'blocked' }).eq('id', userId).select('id, name, email, role, complex_id, apartment, phone, status, face_photo, created_at').single(); if (updated) { setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u))); playTrashWhoosh(); } return; }
     try { const res = await apiFetch(`/api/users/${userId}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'blocked' }) }); if (res.ok) { const updated = await res.json(); setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u))); playTrashWhoosh(); } } catch (e) { console.error(e); }
   };
+
   const createApartment = async (data) => {
     if (!currentComplex) return;
     if (handleLimitExceeded('apartments')) return;
     if (standalone) { const id = genId('apt'); const payload = { id, complex_id: currentComplex.id, number: data.number, floor: data.floor || 1, status: data.status || 'available', resident_id: data.resident_id || null, created_at: new Date().toISOString() }; const { data: created, error } = await supabase.from('apartments').insert(payload).select().single(); if (!error && created) { setApartments((p) => [...p, created]); playSuccessChime(); } return; }
     try { const res = await apiFetch('/api/apartments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...data, complex_id: currentComplex.id }) }); if (res.ok) { await res.json(); playSuccessChime(); } } catch (e) { console.error(e); }
   };
+
   const updateApartmentStatus = async (id, status, resident_id) => {
     if (standalone) { const target = apartments.find((a) => a.id === id); if (!target) return; const { data: updated } = await supabase.from('apartments').update({ status, resident_id: resident_id || null }).eq('id', id).select().single(); if (updated) { setApartments((prev) => prev.map((a) => (a.id === id ? updated : a))); playSuccessChime(); } return; }
     try { const target = apartments.find((a) => a.id === id); if (!target) return; const res = await apiFetch(`/api/apartments/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...target, status, resident_id }) }); if (res.ok) { const updated = await res.json(); setApartments((prev) => prev.map((a) => (a.id === id ? updated : a))); playSuccessChime(); } } catch (e) { console.error(e); }
   };
+
   const deleteApartment = async (id) => {
     if (standalone) {
       const { error } = await supabase.from('apartments').delete().eq('id', id);
@@ -369,6 +698,7 @@ export const DataProvider = ({ children }) => {
     }
     try { const res = await apiFetch(`/api/apartments/${id}`, { method: 'DELETE' }); if (res.ok) { setApartments((prev) => prev.filter((a) => a.id !== id)); playTrashWhoosh(); } } catch (e) { console.error(e); }
   };
+
   const updateApartmentResident = async (apartmentId, residentId) => {
     if (standalone) {
       const target = apartments.find((a) => a.id === apartmentId); if (!target) return;
@@ -378,6 +708,7 @@ export const DataProvider = ({ children }) => {
     }
     try { const target = apartments.find((a) => a.id === apartmentId); if (!target) return; const res = await apiFetch(`/api/apartments/${apartmentId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...target, resident_id: residentId, status: residentId ? 'occupied' : 'available' }) }); if (res.ok) { const updated = await res.json(); setApartments((prev) => prev.map((a) => (a.id === apartmentId ? updated : a))); if (residentId) { const userToUpdate = users.find((u) => u.id === residentId); if (userToUpdate) await apiFetch(`/api/users/${residentId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...userToUpdate, apartment: target.number }) }); } playSuccessChime(); } } catch (e) { console.error(e); }
   };
+
   const createGuard = async (data) => {
     if (!currentComplex) return null;
     if (handleLimitExceeded('guards')) return null;
@@ -401,6 +732,7 @@ export const DataProvider = ({ children }) => {
     }
     try { const res = await apiFetch('/api/guards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...data, complex_id: currentComplex.id }) }); if (res.ok) { const created = await res.json(); playSuccessChime(); return created; } } catch (e) { console.error(e); } return null;
   };
+
   const changePassword = async (userId, currentPassword, newPassword) => {
     if (standalone) {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
@@ -409,6 +741,7 @@ export const DataProvider = ({ children }) => {
     }
     try { const res = await apiFetch(`/api/users/${userId}/password`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPassword, newPassword }) }); if (res.ok) { playSuccessChime(); return { success: true }; } const data = await res.json(); return { success: false, error: data.error }; } catch (e) { console.error(e); return { success: false, error: 'Error de conexión' }; }
   };
+
   const deleteGuard = async (id) => {
     if (standalone) {
       const { error } = await supabase.from('profiles').delete().eq('id', id).eq('role', 'guard');
@@ -417,11 +750,13 @@ export const DataProvider = ({ children }) => {
     }
     try { const res = await apiFetch(`/api/guards/${id}`, { method: 'DELETE' }); if (res.ok) { setGuards((prev) => prev.filter((g) => g.id !== id)); playTrashWhoosh(); } } catch (e) { console.error(e); }
   };
+
   const createAnnouncement = async (title, content) => {
     if (!currentComplex || !currentUser) return;
     if (standalone) { const id = genId('ann'); const payload = { id, complex_id: currentComplex.id, title, content, author_name: currentUser.name, author_id: currentUser.id, created_at: new Date().toISOString() }; const { data: created, error } = await supabase.from('announcements').insert(payload).select().single(); if (!error && created) { setAnnouncements((p) => [created, ...p]); playSuccessChime(); } return; }
     try { const res = await apiFetch('/api/announcements', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ complex_id: currentComplex.id, title, content, author_name: currentUser.name, author_id: currentUser.id }) }); if (res.ok) { await res.json(); playSuccessChime(); } } catch (e) { console.error(e); }
   };
+
   const deleteAnnouncement = async (id) => {
     if (standalone) {
       const { error } = await supabase.from('announcements').delete().eq('id', id);
@@ -430,11 +765,13 @@ export const DataProvider = ({ children }) => {
     }
     try { const res = await apiFetch(`/api/announcements/${id}`, { method: 'DELETE' }); if (res.ok) { setAnnouncements((prev) => prev.filter((a) => a.id !== id)); setComments((prev) => prev.filter((c) => c.announcement_id !== id)); playTrashWhoosh(); } } catch (e) { console.error(e); }
   };
+
   const addComment = async (announcementId, content) => {
     if (!currentUser) return;
     if (standalone) { const id = genId('comm'); const payload = { id, announcement_id: announcementId, author_name: currentUser.name, author_id: currentUser.id, content, created_at: new Date().toISOString() }; const { data: created, error } = await supabase.from('announcement_comments').insert(payload).select().single(); if (!error && created) { setComments((p) => [...p, created]); playNotificationBeep('Nuevo Comentario', content.substring(0, 50)); } return; }
     try { const res = await apiFetch(`/api/announcements/${announcementId}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ author_name: currentUser.name, author_id: currentUser.id, content }) }); if (res.ok) { await res.json(); playNotificationBeep('Nuevo Comentario', content.substring(0, 50)); } } catch (e) { console.error(e); }
   };
+
   const deleteComment = async (commentId) => {
     if (standalone) {
       const { error } = await supabase.from('announcement_comments').delete().eq('id', commentId);
@@ -443,21 +780,64 @@ export const DataProvider = ({ children }) => {
     }
     try { const res = await apiFetch(`/api/announcements/comments/${commentId}`, { method: 'DELETE' }); if (res.ok) { setComments((prev) => prev.filter((c) => c.id !== commentId)); playTrashWhoosh(); } } catch (e) { console.error(e); }
   };
+
+  // ✅ MEJORADO: updateIncidentStatus con notificación push
   const updateIncidentStatus = async (id, status) => {
-    if (standalone) { const { data: updated } = await supabase.from('incidents').update({ status }).eq('id', id).select().single(); if (updated) { setIncidents((prev) => prev.map((i) => (i.id === id ? updated : i))); playSuccessChime(); } return; }
+    if (standalone) {
+      const { data: updated } = await supabase.from('incidents').update({ status }).eq('id', id).select().single();
+      if (updated) {
+        if (updated.reported_by) {
+          insertNotification(updated.reported_by, '🔄 Incidencia Actualizada', `La incidencia "${updated.title}" cambió a: ${status}`, 'incident');
+          try {
+            await sendPushToUser(
+              updated.reported_by,
+              '🔄 Incidencia Actualizada',
+              `La incidencia "${updated.title}" cambió a: ${status}`,
+              `/incidents/${id}`
+            );
+          } catch (error) {
+            console.error('❌ [Incidents] Error enviando push al reportante:', error);
+          }
+        }
+        setIncidents((prev) => prev.map((i) => (i.id === id ? updated : i)));
+        playSuccessChime();
+      }
+      return;
+    }
     try { const res = await apiFetch(`/api/incidents/${id}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); if (res.ok) { const updated = await res.json(); setIncidents((prev) => prev.map((i) => (i.id === id ? updated : i))); playSuccessChime(); } } catch (e) { console.error(e); }
   };
+
+  // ✅ MEJORADO: updateReservationStatus con notificación push
   const updateReservationStatus = async (id, status) => {
     if (standalone) {
       const { data: updated } = await supabase.from('reservations').update({ status }).eq('id', id).select().single();
       if (updated) {
-        if (updated.resident_id) await supabase.from('notifications').insert({ id: genId('notif'), user_id: updated.resident_id, title: status === 'approved' ? 'Reserva Aprobada' : status === 'rejected' ? 'Reserva Rechazada' : 'Reserva Actualizada', message: `Reserva "${updated.area_name}" → ${status}`, read: 0, created_at: new Date().toISOString() }).then(()=>{},()=>{});
-        setReservations((prev) => prev.map((r) => (r.id === id ? updated : r))); playSuccessChime();
+        if (updated.resident_id) {
+          insertNotification(
+            updated.resident_id,
+            status === 'approved' ? '✅ Reserva Aprobada' : '❌ Reserva Rechazada',
+            `Reserva "${updated.area_name}" ha sido ${status}`,
+            'reservation'
+          );
+          try {
+            await sendPushToUser(
+              updated.resident_id,
+              status === 'approved' ? '✅ Reserva Aprobada' : '❌ Reserva Rechazada',
+              `Reserva "${updated.area_name}" ha sido ${status}`,
+              `/reservations/${id}`
+            );
+          } catch (error) {
+            console.error('❌ [Reservations] Error enviando push al residente:', error);
+          }
+        }
+        setReservations((prev) => prev.map((r) => (r.id === id ? updated : r)));
+        playSuccessChime();
       }
       return;
     }
     try { const res = await apiFetch(`/api/reservations/${id}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); if (res.ok) { const updated = await res.json(); setReservations((prev) => prev.map((r) => (r.id === id ? updated : r))); playSuccessChime(); } } catch (e) { console.error(e); }
   };
+
   const createVisitorPass = async (data) => {
     if (!currentComplex || !currentUser) return null;
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let codePart = ''; for (let i = 0; i < 4; i++) codePart += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -465,15 +845,16 @@ export const DataProvider = ({ children }) => {
     if (standalone) { const id = genId('vis'); const payload = { id, complex_id: currentComplex.id, code, visitor_name: data.visitor_name, purpose: data.purpose, destination_apartment: data.destination_apartment || currentUser.apartment || 'Apt', resident_name: currentUser.name, resident_id: currentUser.id, status: 'registered', created_at: new Date().toISOString() }; const { data: visitor, error } = await supabase.from('visitors').insert(payload).select().single(); if (!error && visitor) { setVisitors((p) => [visitor, ...p]); playSuccessChime(); return visitor; } return null; }
     try { const res = await apiFetch('/api/visitors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ complex_id: currentComplex.id, code, visitor_name: data.visitor_name, purpose: data.purpose, destination_apartment: data.destination_apartment || currentUser.apartment || 'Apt', resident_name: currentUser.name, resident_id: currentUser.id, status: 'registered' }) }); if (res.ok) { const visitor = await res.json(); playSuccessChime(); return visitor; } } catch (e) { console.error(e); } return null;
   };
+
   const createIncident = async (data) => {
     if (!currentComplex || !currentUser) return;
     if (standalone) { const id = genId('inc'); const payload = { id, complex_id: currentComplex.id, title: data.title, description: data.description || '', priority: data.priority || 'medium', status: data.status || 'open', reported_by: currentUser.id, apartment: currentUser.apartment || 'Apt', attachments: data.attachments ? JSON.stringify(data.attachments) : null, created_at: new Date().toISOString() }; const { data: created, error } = await supabase.from('incidents').insert(payload).select().single(); if (!error && created) { setIncidents((p) => [created, ...p]); playSuccessChime(); } return; }
     try { const res = await apiFetch('/api/incidents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...data, complex_id: currentComplex.id, reported_by: currentUser.id, apartment: currentUser.apartment || 'Apt' }) }); if (res.ok) { await res.json(); playSuccessChime(); } } catch (e) { console.error(e); }
   };
+
   const createReservation = async (data) => {
     if (!currentComplex || !currentUser) return { success: false, message: 'No hay usuario o complejo activo.' };
     if (standalone) {
-      // Validación simple de solapamiento (igual que server.ts)
       const { data: existing } = await supabase.from('reservations').select('*').eq('complex_id', currentComplex.id).eq('area_name', data.area_name).eq('reservation_date', data.reservation_date).in('status', ['pending','approved']);
       const start = Number((data.start_time||'').replace(':','')); const end = Number((data.end_time||'').replace(':',''));
       const overlaps = (existing||[]).filter((item) => { if (!item.start_time || !item.end_time) return false; const s = Number(String(item.start_time).replace(':','')); const e = Number(String(item.end_time).replace(':','')); return !(end <= s || start >= e); });
@@ -486,21 +867,36 @@ export const DataProvider = ({ children }) => {
     }
     try { const res = await apiFetch('/api/reservations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...data, complex_id: currentComplex.id, resident_id: currentUser.id, resident_name: currentUser.name, apartment: currentUser.apartment || 'Apt', status: 'pending' }) }); if (res.ok) { const created = await res.json(); playSuccessChime(); return { success: true, data: created }; } const payload = await res.json().catch(() => ({})); return { success: false, message: payload.error || 'No se pudo crear la reserva.' }; } catch (e) { console.error(e); return { success: false, message: 'Error al crear la reserva.' }; }
   };
+
   const findVisitorByCode = (code) => { const clean = code.trim().toUpperCase(); return visitors.find((v) => v.code.toUpperCase() === clean || v.code.toUpperCase() === `VIS-${clean}`); };
+
   const updateVisitorStatus = async (id, status) => {
     if (standalone) {
       const now = new Date().toISOString(); const update = { status }; if (status === 'in') update.checked_in_at = now; if (status === 'out') update.checked_out_at = now;
       const { data: visitor } = await supabase.from('visitors').update(update).eq('id', id).select().single();
-      if (visitor) { if (visitor.resident_id) await supabase.from('notifications').insert({ id: genId('notif'), user_id: visitor.resident_id, title: status === 'in' ? 'Visitante Ingresó' : status === 'out' ? 'Visitante Salió' : 'Pase Actualizado', message: `${visitor.visitor_name} (${visitor.code}) → ${status.toUpperCase()}`, read: 0, created_at: now }).then(()=>{},()=>{}); setVisitors((prev) => prev.map((v) => (v.id === id ? visitor : v))); playNotificationBeep(status === 'in' ? 'Visitante Ingresó' : 'Visitante Salió', `${visitor.visitor_name} (${visitor.code}) → ${status.toUpperCase()}`); }
+      if (visitor) {
+        if (visitor.resident_id) {
+          insertNotification(
+            visitor.resident_id,
+            status === 'in' ? '✅ Visitante Ingresó' : status === 'out' ? '🚪 Visitante Salió' : 'Pase Actualizado',
+            `${visitor.visitor_name} (${visitor.code}) → ${status.toUpperCase()}`,
+            'visitor'
+          );
+        }
+        setVisitors((prev) => prev.map((v) => (v.id === id ? visitor : v)));
+        playNotificationBeep(status === 'in' ? 'Visitante Ingresó' : 'Visitante Salió', `${visitor.visitor_name} (${visitor.code}) → ${status.toUpperCase()}`);
+      }
       return;
     }
     try { const res = await apiFetch(`/api/visitors/${id}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); if (res.ok) { const updated = await res.json(); setVisitors((prev) => prev.map((v) => (v.id === id ? updated : v))); playNotificationBeep(status === 'in' ? 'Visitante Ingresó' : 'Visitante Salió', `Estado actualizado a ${status.toUpperCase()}`); } } catch (e) { console.error(e); }
   };
+
   const markAllNotificationsAsRead = async () => {
     if (!currentUser) return;
     if (standalone) { await supabase.from('notifications').update({ read: 1 }).eq('user_id', currentUser.id); setNotifications((prev) => prev.map((n) => ({ ...n, read: 1 }))); return; }
     try { await apiFetch('/api/notifications/read-all', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser.id }) }); setNotifications((prev) => prev.map((n) => ({ ...n, read: 1 }))); } catch (e) { console.error(e); }
   };
+
   const clearNotifications = async () => {
     if (!currentUser) return;
     if (standalone) { await supabase.from('notifications').delete().eq('user_id', currentUser.id); setNotifications([]); return; }
@@ -508,7 +904,21 @@ export const DataProvider = ({ children }) => {
   };
 
   return (
-    <DataContext.Provider value={{ complexes, users, apartments, guards, announcements, comments, incidents, reservations, visitors, audits, notifications, isWsConnected, isLoading, refreshData, createComplex, updateComplex, deleteComplex, toggleComplexStatus, changeComplexPlan, markComplexPaid, createAdmin, purgeUserAccountCascading, approveResident, rejectResident, createApartment, updateApartmentStatus, updateApartmentResident, changePassword, deleteApartment, createGuard, deleteGuard, createAnnouncement, deleteAnnouncement, addComment, deleteComment, updateIncidentStatus, updateReservationStatus, createVisitorPass, createIncident, createReservation, findVisitorByCode, updateVisitorStatus, markAllNotificationsAsRead, clearNotifications, checkResourceLimit }}>
+    <DataContext.Provider value={{ 
+      complexes, users, apartments, guards, announcements, comments, 
+      incidents, reservations, visitors, audits, notifications, 
+      isWsConnected, isLoading, onlineUsers, dailyUsage, refreshData, 
+      createComplex, updateComplex, deleteComplex, toggleComplexStatus, changeComplexPlan, markComplexPaid,
+      createAdmin, purgeUserAccountCascading, approveResident, rejectResident,
+      createApartment, updateApartmentStatus, updateApartmentResident, changePassword, deleteApartment,
+      createGuard, deleteGuard,
+      createAnnouncement, deleteAnnouncement, addComment, deleteComment,
+      updateIncidentStatus, updateReservationStatus,
+      createVisitorPass, createIncident, createReservation,
+      findVisitorByCode, updateVisitorStatus,
+      markAllNotificationsAsRead, clearNotifications,
+      checkResourceLimit 
+    }}>
       {children}
     </DataContext.Provider>
   );

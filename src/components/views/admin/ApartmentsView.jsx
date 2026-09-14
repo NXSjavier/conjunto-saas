@@ -125,8 +125,9 @@ export const ApartmentsView = () => {
           description="Agrega apartamentos para comenzar."
         />
       ) : (
-        <div className="rounded-2xl bg-slate-900/70 border border-slate-800 overflow-hidden">
-          <div className="overflow-x-auto">
+         <div className="rounded-2xl bg-slate-900/70 border border-slate-800 overflow-hidden">
+          {/* Desktop: tabla */}
+          <div className="hidden lg:block overflow-x-auto">
             <table className="w-full min-w-[680px] text-left text-sm">
               <thead className="bg-slate-950/80 text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800">
                 <tr>
@@ -207,6 +208,72 @@ export const ApartmentsView = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile: cards */}
+          <div className="lg:hidden space-y-2 p-2">
+            {apartments.map((apt) => (
+              <div key={apt.id} className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-bold text-slate-100">Apt. {apt.number}</p>
+                    <p className="text-[10px] text-slate-500">Piso {apt.floor} · {getComplexName(apt.complex_id)}</p>
+                  </div>
+                  <Badge variant={statusVariant(apt.status)} size="sm">
+                    {apt.status?.toUpperCase()}
+                  </Badge>
+                </div>
+                <p className="text-xs text-slate-400">
+                  {apt.resident_id ? (
+                    <span className="text-emerald-400 font-medium">{getResidentName(apt.resident_id)}</span>
+                  ) : 'Sin residente'}
+                </p>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<Users className="w-3.5 h-3.5" />}
+                    onClick={() => handleAssignResident(apt)}
+                    className={apt.resident_id ? 'text-emerald-400' : 'text-slate-400'}
+                  >
+                    {apt.resident_id ? 'Cambiar' : 'Asignar'}
+                  </Button>
+                  {apt.resident_id && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={<UserCheck className="w-3.5 h-3.5" />}
+                      onClick={() => handleReleaseApartment(apt.id)}
+                      className="text-amber-400 hover:text-amber-300"
+                    >
+                      Liberar
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      updateApartmentStatus(
+                        apt.id,
+                        apt.status === 'available' ? 'occupied' : 'available'
+                      )
+                    }
+                  >
+                    {apt.status === 'available' ? 'Ocupar' : 'Liberar'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    icon={<Trash2 className="w-3.5 h-3.5" />}
+                    onClick={() => {
+                      if (confirm(`¿Eliminar el apartamento ${apt.number}?`)) {
+                        deleteApartment(apt.id);
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

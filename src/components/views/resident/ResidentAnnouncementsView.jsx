@@ -1,23 +1,41 @@
 import React from 'react';
 import { useData } from '../../../context/DataContext';
+import { useAuth } from '../../../context/AuthContext';
 import { Card } from '../../ui/Card';
 import { PageHeader } from '../../ui/PageHeader';
 import { Badge } from '../../ui/Badge';
 import { AnnouncementComments } from '../../ui/AnnouncementComments';
-import { Megaphone } from 'lucide-react';
+import { Megaphone, WifiOff } from 'lucide-react';
 import { formatDate } from '../../../lib/utils';
+import { getCachedAnnouncements, useOnlineStatus } from '../../../lib/offlineCache';
 
 export const ResidentAnnouncementsView = () => {
   const { announcements, comments, addComment, deleteComment } = useData();
+  const { currentUser } = useAuth();
+  const online = useOnlineStatus();
+
+  // Fallback offline: últimos comunicados guardados
+  const cached = announcements.length === 0 ? getCachedAnnouncements(currentUser?.complex_id) : null;
+  const list = announcements.length > 0 ? announcements : (cached?.items || []);
+  const showingCached = announcements.length === 0 && list.length > 0;
 
   return (
     <div className="space-y-6">
       <PageHeader title="Comunicados" subtitle="Avisos de la administración con comentarios en tiempo real" />
-      {announcements.length === 0 ? (
+      {showingCached && (
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+          <WifiOff className="w-4 h-4 text-amber-400 shrink-0" />
+          <p className="text-[11px] text-amber-200/90">
+            Sin conexión. Mostrando últimos comunicados guardados
+            {cached?.savedAt ? ` (${formatDate(cached.savedAt)})` : ''}. Los comentarios requieren internet.
+          </p>
+        </div>
+      )}
+      {list.length === 0 ? (
         <Card><p className="text-xs text-slate-500 text-center py-6">No hay comunicados publicados aún.</p></Card>
       ) : (
         <div className="space-y-4">
-          {announcements.map(a => (
+          {list.map(a => (
             <Card key={a.id}>
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
@@ -29,7 +47,9 @@ export const ResidentAnnouncementsView = () => {
                   <Badge variant="sky" size="sm">{a.author_name || 'Administración'}</Badge>
                 </div>
               </div>
-              <AnnouncementComments announcementId={a.id} comments={comments} onAddComment={(content) => addComment(a.id, content)} onDeleteComment={deleteComment} />
+              {online && !showingCached && (
+                <AnnouncementComments announcementId={a.id} comments={comments} onAddComment={(content) => addComment(a.id, content)} onDeleteComment={deleteComment} />
+              )}
             </Card>
           ))}
         </div>

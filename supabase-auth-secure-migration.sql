@@ -1,4 +1,4 @@
--- Migracion segura de Conjuntos App a Supabase Auth.
+-- Migracion segura de Residex a Supabase Auth.
 -- Ejecutar una vez en Supabase SQL Editor.
 -- No elimina datos existentes.
 

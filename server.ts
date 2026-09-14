@@ -701,7 +701,7 @@ async function startServer() {
   }
 
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Conjuntos App (Supabase) running on port ${PORT}`);
+    console.log(`Residex (Supabase) running on port ${PORT}`);
   });
 }
 

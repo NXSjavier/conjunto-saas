@@ -9,7 +9,7 @@ export function generateSubscriptionReceiptPDF(complex, operator) {
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(20);
   doc.setFont('helvetica', 'bold');
-  doc.text('CONJUNTOS APP - RECIBO DE PAGO', 20, 22);
+  doc.text('Residex - RECIBO DE PAGO', 20, 22);
 
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
@@ -70,7 +70,7 @@ export function generateSubscriptionReceiptPDF(complex, operator) {
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.text(`Autorizado por: ${operator.name} (${operator.role})`, 20, 220);
-  doc.text('Este documento digital certifica el pago formal y la extensión de la licencia SaaS de Conjuntos App.', 20, 226);
+  doc.text('Este documento digital certifica el pago formal y la extensión de la licencia SaaS de Residex.', 20, 226);
   doc.text('Soporte Técnico: soporte@conjuntos.app | PBX: +57 601 800 9000', 20, 232);
 
   doc.save(`Recibo-Suscripcion-${complex.code}.pdf`);
@@ -88,7 +88,7 @@ export function generateUserDeletionCertificatePDF(purgedUser, operator) {
   doc.text('CERTIFICADO DE PURGA Y AUDITORÍA DE USUARIO', 15, 22);
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
-  doc.text('Seguridad y Protección de Datos - Conjuntos App SaaS', 15, 30);
+  doc.text('Seguridad y Protección de Datos - Residex SaaS', 15, 30);
 
   doc.setTextColor(30, 41, 59);
   doc.setFontSize(11);

@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
+
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
   authDomain: `${import.meta.env.VITE_FIREBASE_PROJECT_ID || ''}.firebaseapp.com`,
@@ -15,6 +16,7 @@ const SW_SCOPE = '/';
 
 let app: ReturnType<typeof initializeApp> | null = null;
 let messaging: ReturnType<typeof getMessaging> | null = null;
+let messageListener: (() => void) | null = null;
 
 export const __internal = { SW_SCRIPT, SW_SCOPE };
 
@@ -57,28 +59,27 @@ export function isPushDefault(): boolean {
 async function ensureServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) return null;
   try {
+    // pwa.js es el único que registra/limpia SW. Aquí solo reutilizamos el registro.
     let reg = await navigator.serviceWorker.getRegistration(SW_SCOPE);
-    if (!reg || !reg.active) {
-      reg = await navigator.serviceWorker.register(SW_SCRIPT, { scope: SW_SCOPE, updateViaCache: 'none' });
-      try { reg.update(); } catch {}
+    if (!reg) {
+      // Fallback si pwa.js aún no registró (ej. primer load muy temprano)
+      try {
+        reg = await navigator.serviceWorker.register(SW_SCRIPT, { scope: SW_SCOPE, updateViaCache: 'none' });
+      } catch {}
     }
-    try {
-      await navigator.serviceWorker.ready;
-    } catch {}
-    reg = (await navigator.serviceWorker.getRegistration(SW_SCOPE)) || reg;
-    // Forzar claim: si hay un SW nuevo en waiting, lo activamos.
-    if (reg && reg.waiting) {
+    if (reg?.waiting) {
       try { reg.waiting.postMessage({ type: 'SKIP_WAITING' }); } catch {}
     }
-    return reg || null;
+    await navigator.serviceWorker.ready;
+    return reg || (await navigator.serviceWorker.getRegistration(SW_SCOPE));
   } catch (err) {
-    console.warn('ensureServiceWorker error:', err);
+    console.error('❌ Error en ensureServiceWorker:', err);
     return null;
   }
 }
 
 /**
- * Pide permiso y obtiene token FCM (solo para PWA/web, NO Capacitor).
+ * Pide permiso y obtiene token FCM
  */
 export async function requestPushPermission(): Promise<string | null> {
   try {
@@ -101,6 +102,8 @@ export async function requestPushPermission(): Promise<string | null> {
       vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY || undefined,
       serviceWorkerRegistration: reg,
     });
+    
+    console.log('✅ Token FCM obtenido:', token);
     return token || null;
   } catch (err) {
     console.error('requestPushPermission error:', err);
@@ -109,7 +112,7 @@ export async function requestPushPermission(): Promise<string | null> {
 }
 
 /**
- * Si el permiso ya fue otorgado, devuelve el token existente o genera uno nuevo.
+ * Obtiene el token existente
  */
 export async function getExistingToken(): Promise<string | null> {
   try {
@@ -132,14 +135,83 @@ export async function getExistingToken(): Promise<string | null> {
 }
 
 /**
- * Listener para notificaciones en PRIMER PLANO (app abierta).
+ * Escucha notificaciones en PRIMER PLANO (app abierta)
  */
 export function onPushMessage(callback: (payload: any) => void): (() => void) | null {
   const fcm = getFirebaseMessaging();
-  if (!fcm) return null;
-  try {
-    return onMessage(fcm, callback);
-  } catch {
+  if (!fcm) {
+    console.warn('⚠️ Firebase Messaging no inicializado');
     return null;
+  }
+  
+  try {
+    // ✅ Limpiar listener anterior
+    if (messageListener) {
+      messageListener();
+      messageListener = null;
+    }
+
+    // ✅ Escuchar mensajes en primer plano
+    messageListener = onMessage(fcm, (payload) => {
+      console.log('📨 [Foreground] Mensaje recibido:', payload);
+      
+      // ✅ Mostrar notificación nativa en foreground
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        const title = payload.notification?.title || 'Residex';
+        const body = payload.notification?.body || '';
+        const icon = payload.notification?.icon || '/icons/icon-192.png';
+        const url = payload.data?.url || '/';
+        
+        try {
+          const notification = new Notification(title, {
+            body: body,
+            icon: icon,
+            data: {
+              url: url,
+              payload: payload
+            },
+            vibrate: [200, 100, 200, 100, 200],
+          });
+          
+          notification.onclick = () => {
+            notification.close();
+            if (url && url !== '/') {
+              window.location.href = url;
+            }
+          };
+        } catch (error) {
+          console.warn('Error mostrando notificación nativa:', error);
+        }
+      }
+      
+      // ✅ Ejecutar callback con el payload
+      if (callback) {
+        callback(payload);
+      }
+    });
+
+    console.log('✅ Listener de mensajes en foreground activado');
+    return () => {
+      if (messageListener) {
+        messageListener();
+        messageListener = null;
+      }
+    };
+  } catch (error) {
+    console.error('❌ Error en onPushMessage:', error);
+    return null;
+  }
+}
+
+/**
+ * Limpia los listeners de Firebase
+ */
+export function cleanupFirebaseListeners() {
+  if (messageListener) {
+    try {
+      messageListener();
+    } catch {}
+    messageListener = null;
+    console.log('🧹 Listeners de Firebase limpiados');
   }
 }
